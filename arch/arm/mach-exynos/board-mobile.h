@@ -37,5 +37,4 @@ extern int brcm_wlan_init(void);
 /* gps */
 extern void set_gps_uart_op(int onoff);
 
-extern void exynos_kona_charger_init(void);
 #endif
