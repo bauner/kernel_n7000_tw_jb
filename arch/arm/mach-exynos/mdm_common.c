@@ -58,10 +58,6 @@ static const char rmnet_pm_dev[] = "mdm_hsic_pm0";
 #include <linux/poll.h>
 #endif
 
-#ifdef CONFIG_FAST_BOOT
-#include <linux/reboot.h>
-#endif
-
 #define MDM_MODEM_TIMEOUT	6000
 #define MDM_MODEM_DELTA	100
 #define MDM_BOOT_TIMEOUT	60000L
@@ -194,6 +190,9 @@ void print_mdm_gpio_state(void)
 	pr_info("ap2mdm_status is %s\n",
 			gpio_get_value(mdm_drv->ap2mdm_status_gpio) ?
 				"high" : "low");
+	pr_info("ap2mdm_errfatal is %s\n",
+			gpio_get_value(mdm_drv->ap2mdm_errfatal_gpio) ?
+				"high" : "low");
 	pr_info("mdm2ap_status is %s\n",
 			gpio_get_value(mdm_drv->mdm2ap_status_gpio) ?
 				"high" : "low");
@@ -219,6 +218,27 @@ static void mdm2ap_status_check(struct work_struct *work)
 }
 
 static DECLARE_DELAYED_WORK(mdm2ap_status_check_work, mdm2ap_status_check);
+
+static void mdm_silent_reset(void)
+{
+	pr_info("mdm: silent reset!!\n");
+
+	mdm_drv->boot_type = CHARM_NORMAL_BOOT;
+	complete(&mdm_needs_reload);
+	if (!wait_for_completion_timeout(&mdm_boot,
+			msecs_to_jiffies(MDM_BOOT_TIMEOUT))) {
+		mdm_drv->mdm_boot_status = -ETIMEDOUT;
+		pr_info("%s: mdm modem restart timed out.\n", __func__);
+		panic("%s[%p]: Failed to powerup!", __func__, current);
+	} else {
+		pr_info("%s: mdm modem has been restarted\n", __func__);
+
+		/* Log the reason for the restart */
+		if (mdm_drv->pdata->sfr_query)
+			queue_work(mdm_sfr_queue, &sfr_reason_work);
+	}
+	INIT_COMPLETION(mdm_boot);
+}
 
 long mdm_modem_ioctl(struct file *filp, unsigned int cmd,
 				unsigned long arg)
@@ -322,8 +342,12 @@ long mdm_modem_ioctl(struct file *filp, unsigned int cmd,
 		return mdm_drv->proto_is_dload;
 
 	case GET_FORCE_RAMDUMP:
+		get_user(status, (unsigned long __user *) arg);
 		pr_info("%s: mdm get dump mode = %d\n", __func__, force_dump);
-		mdm_force_fatal();
+		if (status)
+			mdm_force_fatal();
+		else
+			mdm_silent_reset();
 		break;
 
 #ifdef CONFIG_SIM_DETECT
@@ -350,34 +374,6 @@ static void mdm_fatal_fn(struct work_struct *work)
 
 static DECLARE_WORK(mdm_fatal_work, mdm_fatal_fn);
 
-static void mdm_reconnect_fn(struct work_struct *work)
-{
-	pr_info("mdm: check 2nd enumeration\n");
-
-	if (mdm_check_main_connect(rmnet_pm_dev))
-		return;
-
-	pr_info("mdm: silent reset!!\n");
-
-	mdm_drv->boot_type = CHARM_NORMAL_BOOT;
-	complete(&mdm_needs_reload);
-	if (!wait_for_completion_timeout(&mdm_boot,
-			msecs_to_jiffies(MDM_BOOT_TIMEOUT))) {
-		mdm_drv->mdm_boot_status = -ETIMEDOUT;
-		pr_info("%s: mdm modem restart timed out.\n", __func__);
-		panic("%s[%p]: Failed to powerup!", __func__, current);
-	} else {
-		pr_info("%s: mdm modem has been restarted\n", __func__);
-
-		/* Log the reason for the restart */
-		if (mdm_drv->pdata->sfr_query)
-			queue_work(mdm_sfr_queue, &sfr_reason_work);
-	}
-	INIT_COMPLETION(mdm_boot);
-}
-
-static DECLARE_DELAYED_WORK(mdm_reconnect_work, mdm_reconnect_fn);
-
 static void mdm_status_fn(struct work_struct *work)
 {
 	int value = gpio_get_value(mdm_drv->mdm2ap_status_gpio);
@@ -389,8 +385,6 @@ static void mdm_status_fn(struct work_struct *work)
 	if (value) {
 		request_boot_lock_release(rmnet_pm_dev);
 		request_active_lock_set(rmnet_pm_dev);
-		queue_delayed_work(mdm_queue, &mdm_reconnect_work,
-							msecs_to_jiffies(3000));
 	}
 #endif
 }
@@ -471,10 +465,6 @@ static void sim_status_check(struct work_struct *work)
 		mdm_drv->sim_changed = 1;
 		pr_info("sim state = %s\n",
 			mdm_drv->sim_state == 1 ? "Attach" : "Detach");
-#ifdef CONFIG_FAST_BOOT
-		if (fake_shut_down)
-			mdm_drv->sim_shutdown_req = true;
-#endif
 		wake_up_interruptible(&mdm_drv->wq);
 	} else
 		mdm_drv->sim_changed = 0;
@@ -649,9 +639,6 @@ static int mdm_subsys_shutdown(const struct subsys_data *crashed_subsys)
 		msleep(mdm_drv->pdata->ramdump_delay_ms);
 	}
 
-	/* close silent log */
-	silent_log_panic_handler();
-
 	#if 0
 	if (!mdm_drv->mdm_unexpected_reset_occurred)
 		mdm_drv->ops->reset_mdm_cb(mdm_drv);
@@ -751,18 +738,6 @@ static int mdm_debugfs_init(void)
 }
 #endif
 
-#ifdef CONFIG_FAST_BOOT
-static void sim_detect_complete(struct device *dev)
-{
-	if (!mdm_drv->sim_irq && mdm_drv->sim_shutdown_req) {
-		pr_info("fake shutdown sim changed shutdown\n");
-		kernel_power_off();
-		/*kernel_restart(NULL);*/
-		mdm_drv->sim_shutdown_req = false;
-	}
-}
-#endif
-
 static void mdm_modem_initialize_data(struct platform_device  *pdev,
 				struct mdm_ops *mdm_ops)
 {
@@ -822,9 +797,15 @@ static void mdm_modem_initialize_data(struct platform_device  *pdev,
 	if (pres)
 		mdm_drv->ap2mdm_pmic_pwr_en_gpio = pres->start;
 
+#ifdef CONFIG_HSIC_EURONLY_APPLY
+	/* MDM2AP_HSIC_READY */
+	pres = platform_get_resource_byname(pdev, IORESOURCE_IO,
+							"MDM2AP_HSIC_READY");
+#else
 	/* MDM2AP_PBLRDY */
 	pres = platform_get_resource_byname(pdev, IORESOURCE_IO,
 							"MDM2AP_PBLRDY");
+#endif
 	if (pres)
 		mdm_drv->mdm2ap_pblrdy = pres->start;
 #ifdef CONFIG_SIM_DETECT
@@ -845,10 +826,6 @@ static void mdm_modem_initialize_data(struct platform_device  *pdev,
 	mdm_drv->pdata    = pdev->dev.platform_data;
 	dump_timeout_ms = mdm_drv->pdata->ramdump_timeout_ms > 0 ?
 		mdm_drv->pdata->ramdump_timeout_ms : MDM_RDUMP_TIMEOUT;
-#ifdef CONFIG_FAST_BOOT
-	mdm_drv->pdata->modem_complete = sim_detect_complete;
-	mdm_drv->sim_shutdown_req = false;
-#endif
 }
 
 int mdm_common_create(struct platform_device  *pdev,
@@ -876,8 +853,12 @@ int mdm_common_create(struct platform_device  *pdev,
 #ifdef CONFIG_SIM_DETECT
 	gpio_request(mdm_drv->sim_detect_gpio, "SIM_DETECT");
 #endif
+#ifdef CONFIG_HSIC_EURONLY_APPLY
+	gpio_request(mdm_drv->mdm2ap_pblrdy, "MDM2AP_HSIC_READY");
+#else
 	if (mdm_drv->mdm2ap_pblrdy > 0)
 		gpio_request(mdm_drv->mdm2ap_pblrdy, "MDM2AP_PBLRDY");
+#endif
 
 	if (mdm_drv->ap2mdm_pmic_pwr_en_gpio > 0) {
 		gpio_request(mdm_drv->ap2mdm_pmic_pwr_en_gpio,
@@ -1048,7 +1029,11 @@ status_err:
 simdetect_err:
 #endif
 
-	if (mdm_drv->mdm2ap_pblrdy > 0) {
+#ifndef CONFIG_HSIC_EURONLY_APPLY
+	if (mdm_drv->mdm2ap_pblrdy > 0)
+#endif
+	{
+
 #ifdef CONFIG_ARCH_EXYNOS
 		s3c_gpio_cfgpin(mdm_drv->mdm2ap_pblrdy, S3C_GPIO_SFN(0xf));
 		s3c_gpio_setpull(mdm_drv->mdm2ap_pblrdy, S3C_GPIO_PULL_NONE);

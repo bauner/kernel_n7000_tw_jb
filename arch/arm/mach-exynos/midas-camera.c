@@ -18,6 +18,9 @@
 #include <plat/csis.h>
 #include <plat/pd.h>
 #include <plat/gpio-cfg.h>
+#ifdef CONFIG_VIDEO_FIMC
+#include <plat/fimc.h>
+#endif
 #ifdef CONFIG_VIDEO_SAMSUNG_S5P_FIMC
 #include <plat/fimc-core.h>
 #include <media/s5p_fimc.h>
@@ -93,8 +96,6 @@ subsys_initcall(camera_class_init);
 #endif
 #elif defined(CONFIG_MACH_BAFFIN)
 #define FRONT_CAM_MCLK_DEVIDED_REVISION	0x00
-#define USE_8M_CAM_SENSOR_CORE_REVISION	0x00
-#elif defined(CONFIG_MACH_M3_USA_TMO)
 #define USE_8M_CAM_SENSOR_CORE_REVISION	0x00
 #else
 #if defined(CONFIG_MACH_C1_KOR_SKT) || defined(CONFIG_MACH_C1_KOR_KT)
@@ -234,7 +235,7 @@ static struct s3c_platform_camera writeback = {
 
 #ifdef CONFIG_VIDEO_EXYNOS_FIMC_IS
 #ifdef CONFIG_VIDEO_S5K6A3
-#if defined(CONFIG_MACH_P4NOTE) || defined(CONFIG_MACH_KONA)
+#ifdef CONFIG_MACH_P4NOTE
 /* For P4Note PegasusQ */
 static int s5k6a3_power_on(void)
 {
@@ -334,191 +335,6 @@ static int s5k6a3_power_down(void)
 	udelay(1);
 
 	gpio_free(GPIO_VT_CAM_nRST);
-
-	return ret;
-}
-#elif defined(CONFIG_MACH_M3_JPN_DCM)
-static int s5k6a3_gpio_request(void)
-{
-	int ret = 0;
-
-	/* SENSOR_A2.8V */
-	if (system_rev < 3)
-		ret = gpio_request(GPIO_CAM_IO_EN_R1, "GPM0");
-	else
-		ret = gpio_request(GPIO_CAM_IO_EN, "GPM0");
-
-	if (ret) {
-		printk(KERN_ERR "fail to request gpio(GPIO_CAM_IO_EN)\n");
-		return ret;
-	}
-
-#if defined(CONFIG_MACH_T0) || defined(CONFIG_MACH_M3) || \
-	defined(CONFIG_MACH_SLP_T0_LTE)
-	ret = gpio_request(GPIO_VTCAM_MCLK, "GPM2");
-	if (ret) {
-		printk(KERN_ERR "fail to request gpio(GPIO_VTCAM_MCLK)\n");
-		return ret;
-	}
-#else
-	if (system_rev < FRONT_CAM_MCLK_DEVIDED_REVISION)
-		ret = gpio_request(GPIO_CAM_MCLK, "GPJ1");
-	else
-		ret = gpio_request(GPIO_VTCAM_MCLK, "GPM2");
-	if (ret) {
-		printk(KERN_ERR "fail to request gpio(GPIO_VTCAM_MCLK)\n");
-		return ret;
-	}
-#endif
-
-	ret = gpio_request(GPIO_CAM_VT_nRST, "GPM1");
-	if (ret) {
-		printk(KERN_ERR "fail to request gpio(GPIO_CAM_VT_nRST)\n");
-		return ret;
-	}
-
-	return ret;
-}
-
-static int s5k6a3_power_on(void)
-{
-	struct regulator *regulator;
-	int ret = 0;
-
-	printk(KERN_DEBUG "%s: in\n", __func__);
-
-	s5k6a3_gpio_request();
-
-	/* CAM_SENSOR_A2.8V */
-	if (system_rev < 3)
-		ret = gpio_direction_output(GPIO_CAM_IO_EN_R1, 1);
-	else
-		ret = gpio_direction_output(GPIO_CAM_IO_EN, 1);
-
-	CAM_CHECK_ERR_RET(ret, "output GPIO_CAM_IO_EN");
-	/* delay is needed : external LDO control is slower than MCLK control*/
-	udelay(100);
-
-	/* MCLK */
-#if defined(CONFIG_MACH_T0) || defined(CONFIG_MACH_M3) ||\
-	defined(CONFIG_MACH_SLP_T0_LTE)
-	ret = s3c_gpio_cfgpin(GPIO_VTCAM_MCLK, S3C_GPIO_SFN(3));
-	s3c_gpio_setpull(GPIO_VTCAM_MCLK, S3C_GPIO_PULL_NONE);
-#if defined(CONFIG_MACH_T0)  || defined(CONFIG_MACH_SLP_T0_LTE)
-	s5p_gpio_set_drvstr(GPIO_VTCAM_MCLK, S5P_GPIO_DRVSTR_LV1);
-#else
-	s5p_gpio_set_drvstr(GPIO_VTCAM_MCLK, S5P_GPIO_DRVSTR_LV2);
-#endif
-#else
-	if (system_rev < FRONT_CAM_MCLK_DEVIDED_REVISION) {
-		ret = s3c_gpio_cfgpin(GPIO_CAM_MCLK, S3C_GPIO_SFN(2));
-		s3c_gpio_setpull(GPIO_CAM_MCLK, S3C_GPIO_PULL_NONE);
-		s5p_gpio_set_drvstr(GPIO_CAM_MCLK, S5P_GPIO_DRVSTR_LV2);
-	} else {
-		ret = s3c_gpio_cfgpin(GPIO_VTCAM_MCLK, S3C_GPIO_SFN(3));
-		s3c_gpio_setpull(GPIO_VTCAM_MCLK, S3C_GPIO_PULL_NONE);
-		s5p_gpio_set_drvstr(GPIO_VTCAM_MCLK, S5P_GPIO_DRVSTR_LV2);
-	}
-#endif
-	CAM_CHECK_ERR_RET(ret, "cfg mclk");
-
-	/* VT_RESET */
-	ret = gpio_direction_output(GPIO_CAM_VT_nRST, 1);
-	CAM_CHECK_ERR_RET(ret, "output GPIO_CAM_VT_nRST");
-
-	/* VT_CORE_1.8V */
-	regulator = regulator_get(NULL, "vt_cam_1.8v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	ret = regulator_enable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR_RET(ret, "enable vt_cam_1.8v");
-
-	if (system_rev < 3)
-		gpio_free(GPIO_CAM_IO_EN_R1);
-	else
-		gpio_free(GPIO_CAM_IO_EN);
-
-	gpio_free(GPIO_CAM_VT_nRST);
-
-#if defined(CONFIG_MACH_T0) || defined(CONFIG_MACH_M3) || \
-	defined(CONFIG_MACH_SLP_T0_LTE)
-	gpio_free(GPIO_VTCAM_MCLK);
-#else
-	if (system_rev < FRONT_CAM_MCLK_DEVIDED_REVISION)
-		gpio_free(GPIO_CAM_MCLK);
-	else
-		gpio_free(GPIO_VTCAM_MCLK);
-#endif
-
-	return ret;
-}
-
-static int s5k6a3_power_down(void)
-{
-	struct regulator *regulator;
-	int ret = 0;
-
-	printk(KERN_DEBUG "%s: in\n", __func__);
-
-	s5k6a3_gpio_request();
-
-	/* VT_RESET */
-	ret = gpio_direction_output(GPIO_CAM_VT_nRST, 0);
-	CAM_CHECK_ERR_RET(ret, "output GPIO_CAM_VT_nRST");
-
-	/* VT_CORE_1.8V */
-	regulator = regulator_get(NULL, "vt_cam_1.8v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	if (regulator_is_enabled(regulator))
-		ret = regulator_force_disable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR(ret, "disable vt_cam_1.8v");
-
-	/* CAM_SENSOR_A2.8V */
-	if (system_rev < 3)
-		ret = gpio_direction_output(GPIO_CAM_IO_EN_R1, 0);
-	else
-		ret = gpio_direction_output(GPIO_CAM_IO_EN, 0);
-
-	CAM_CHECK_ERR_RET(ret, "output GPIO_CAM_IO_EN");
-	/* delay is needed : external LDO control is slower than MCLK control*/
-	udelay(500);
-
-	/* MCLK */
-#if defined(CONFIG_MACH_T0) || defined(CONFIG_MACH_M3) || \
-	defined(CONFIG_MACH_SLP_T0_LTE)
-	ret = s3c_gpio_cfgpin(GPIO_VTCAM_MCLK, S3C_GPIO_INPUT);
-	s3c_gpio_setpull(GPIO_VTCAM_MCLK, S3C_GPIO_PULL_DOWN);
-#else
-	if (system_rev < FRONT_CAM_MCLK_DEVIDED_REVISION) {
-		ret = s3c_gpio_cfgpin(GPIO_CAM_MCLK, S3C_GPIO_INPUT);
-		s3c_gpio_setpull(GPIO_CAM_MCLK, S3C_GPIO_PULL_DOWN);
-
-	} else {
-		ret = s3c_gpio_cfgpin(GPIO_VTCAM_MCLK, S3C_GPIO_INPUT);
-		s3c_gpio_setpull(GPIO_VTCAM_MCLK, S3C_GPIO_PULL_DOWN);
-	}
-#endif
-	CAM_CHECK_ERR(ret, "cfg mclk");
-
-	if (system_rev < 3)
-		gpio_free(GPIO_CAM_IO_EN_R1);
-	else
-		gpio_free(GPIO_CAM_IO_EN);
-
-	gpio_free(GPIO_CAM_VT_nRST);
-
-#if defined(CONFIG_MACH_T0) || defined(CONFIG_MACH_M3) || \
-	defined(CONFIG_MACH_SLP_T0_LTE)
-	gpio_free(GPIO_VTCAM_MCLK);
-#else
-	if (system_rev < FRONT_CAM_MCLK_DEVIDED_REVISION)
-		gpio_free(GPIO_CAM_MCLK);
-	else
-		gpio_free(GPIO_VTCAM_MCLK);
-#endif
 
 	return ret;
 }
@@ -710,7 +526,7 @@ error_out:
 
 static const char *s5k6a3_get_clk_name(void)
 {
-#if defined(CONFIG_MACH_P4NOTE) || defined(CONFIG_MACH_KONA) || \
+#if defined(CONFIG_MACH_P4NOTE) || \
 	defined(CONFIG_MACH_T0) || defined(CONFIG_MACH_M3) \
 	|| defined(CONFIG_MACH_SLP_T0_LTE)
 	return "sclk_cam1";
@@ -881,334 +697,6 @@ static int s5c73m3_is_isp_reset(void)
 	return ret;
 }
 
-#if defined(CONFIG_MACH_M3_JPN_DCM)
-static int s5c73m3_gpio_request(void)
-{
-	int ret = 0;
-
-	if (system_rev < 3)
-		ret = gpio_request(GPIO_ISP_STANDBY_R1, "GPM0");
-	else
-	ret = gpio_request(GPIO_ISP_STANDBY, "GPM0");
-	if (ret) {
-		printk(KERN_ERR "faile to request gpio(GPIO_ISP_STANDBY)\n");
-		return ret;
-	}
-
-	ret = gpio_request(GPIO_ISP_RESET, "GPF1");
-	if (ret) {
-		printk(KERN_ERR "faile to request gpio(GPIO_ISP_RESET)\n");
-		return ret;
-	}
-
-	/* SENSOR_A2.8V */
-	if (system_rev < 3)
-		ret = gpio_request(GPIO_CAM_IO_EN_R1, "GPM0");
-	else
-		ret = gpio_request(GPIO_CAM_IO_EN, "GPM0");
-
-	if (ret) {
-		printk(KERN_ERR "fail to request gpio(GPIO_CAM_IO_EN)\n");
-		return ret;
-	}
-
-	if (system_rev < 3)
-		ret = gpio_request(GPIO_CAM_AF_EN_R1, "GPM1");
-	else
-		ret = gpio_request(GPIO_CAM_AF_EN, "GPM0");
-
-	if (ret) {
-		printk(KERN_ERR "faile to request gpio(GPIO_CAM_AF_EN)\n");
-		return ret;
-	}
-
-	if (system_rev < 3)
-		ret = gpio_request(GPIO_ISP_CORE_EN_R1, "GPM1");
-	else
-		ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
-
-	if (ret) {
-		printk(KERN_ERR "fail to request gpio(GPIO_ISP_CORE_EN)\n");
-		return ret;
-	}
-
-#if defined(CONFIG_MACH_C1) || defined(CONFIG_MACH_T0) || \
-	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN)
-	if (system_rev >= USE_8M_CAM_SENSOR_CORE_REVISION) {
-		ret = gpio_request(GPIO_CAM_SENSOR_CORE_EN, "GPM0");
-		if (ret) {
-			printk(KERN_ERR "fail to request gpio(GPIO_CAM_SENSOR_CORE_EN)\n");
-			return ret;
-		}
-	}
-#endif
-
-	return ret;
-}
-
-static void s5c73m3_gpio_free(void)
-{
-	if (system_rev < 3) {
-		gpio_free(GPIO_ISP_STANDBY_R1);
-		gpio_free(GPIO_CAM_IO_EN_R1);
-		gpio_free(GPIO_ISP_RESET);
-		gpio_free(GPIO_CAM_AF_EN_R1);
-		gpio_free(GPIO_ISP_CORE_EN_R1);
-	} else {
-		gpio_free(GPIO_ISP_STANDBY);
-		gpio_free(GPIO_ISP_RESET);
-		gpio_free(GPIO_CAM_IO_EN);
-		gpio_free(GPIO_CAM_AF_EN);
-		gpio_free(GPIO_ISP_CORE_EN);
-	}
-
-#if defined(CONFIG_MACH_C1) || defined(CONFIG_MACH_T0) || \
-	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN)
-	if (system_rev >= USE_8M_CAM_SENSOR_CORE_REVISION)
-		gpio_free(GPIO_CAM_SENSOR_CORE_EN);
-#endif
-}
-
-static int s5c73m3_power_on(void)
-{
-	struct regulator *regulator;
-	int ret = 0;
-
-	printk(KERN_DEBUG "%s: in\n", __func__);
-
-#ifndef CONFIG_VIDEO_SLP_S5C73M3
-	s5c73m3_check_vdd_core();
-#endif
-	printk(KERN_DEBUG "s5c73m3 vddCore : %d\n", vddCore);
-
-	s5c73m3_gpio_request();
-
-	/* CAM_ISP_CORE_1.2V */
-	if (system_rev < 3)
-		ret = gpio_direction_output(GPIO_ISP_CORE_EN_R1, 1);
-	else
-		ret = gpio_direction_output(GPIO_ISP_CORE_EN, 1);
-
-	CAM_CHECK_ERR_RET(ret, "output GPIO_ISP_CORE_EN");
-
-	regulator = regulator_get(NULL, "cam_isp_core_1.2v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	regulator_set_voltage(regulator, vddCore, vddCore);
-	ret = regulator_enable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR_RET(ret, "enable cam_isp_core_1.2v");
-
-	/* CAM_SENSOR_A2.8V */
-	if (system_rev < 3)
-		ret = gpio_direction_output(GPIO_CAM_IO_EN_R1, 1);
-	else
-		ret = gpio_direction_output(GPIO_CAM_IO_EN, 1);
-
-	CAM_CHECK_ERR_RET(ret, "output IO_EN");
-
-	/* CAM_SENSOR_CORE_1.2V */
-#if defined(CONFIG_MACH_C1) || defined(CONFIG_MACH_T0) || \
-	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN)
-	printk(KERN_DEBUG "system_rev : %d\n", system_rev);
-	if (system_rev >= USE_8M_CAM_SENSOR_CORE_REVISION) {
-		ret = gpio_direction_output(GPIO_CAM_SENSOR_CORE_EN, 1);
-		CAM_CHECK_ERR_RET(ret, "output CAM_SENSOR_CORE_EN");
-		/* delay is needed : external LDO is slower than MCLK control*/
-		udelay(200);
-	} else {
-		regulator = regulator_get(NULL, "cam_sensor_core_1.2v");
-		if (IS_ERR(regulator))
-			return -ENODEV;
-		ret = regulator_enable(regulator);
-		regulator_put(regulator);
-		CAM_CHECK_ERR_RET(ret, "enable cam_sensor_core_1.2v");
-		/* delay is needed : pmu control is slower than gpio control*/
-		mdelay(5);
-	}
-#else
-	regulator = regulator_get(NULL, "cam_sensor_core_1.2v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	ret = regulator_enable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR_RET(ret, "enable cam_sensor_core_1.2v");
-       /* delay is needed : pmu control is slower than gpio control*/
-	mdelay(5);
-#endif
-
-	/* MCLK */
-	ret = s3c_gpio_cfgpin(GPIO_CAM_MCLK, S3C_GPIO_SFN(2));
-	CAM_CHECK_ERR_RET(ret, "cfg mclk");
-	s3c_gpio_setpull(GPIO_CAM_MCLK, S3C_GPIO_PULL_NONE);
-#if defined(CONFIG_MACH_T0) || defined(CONFIG_MACH_SLP_T0_LTE)
-	s5p_gpio_set_drvstr(GPIO_CAM_MCLK, S5P_GPIO_DRVSTR_LV2);
-#else
-	s5p_gpio_set_drvstr(GPIO_CAM_MCLK, S5P_GPIO_DRVSTR_LV3);
-#endif
-
-	/* CAM_AF_2.8V */
-	if (system_rev < 3)
-		ret = gpio_direction_output(GPIO_CAM_AF_EN_R1, 1);
-	else
-		ret = gpio_direction_output(GPIO_CAM_AF_EN, 1);
-
-	CAM_CHECK_ERR_RET(ret, "output GPIO_CAM_AF_EN");
-	udelay(2000);
-
-	/* CAM_ISP_SENSOR_1.8V */
-	regulator = regulator_get(NULL, "cam_isp_sensor_1.8v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	ret = regulator_enable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR_RET(ret, "enable cam_isp_sensor_1.8v");
-
-	/* CAM_ISP_MIPI_1.2V */
-	regulator = regulator_get(NULL, "cam_isp_mipi_1.2v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	ret = regulator_enable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR_RET(ret, "enable cam_isp_mipi_1.2v");
-       /* delay is needed : pmu control is slower than gpio control*/
-	mdelay(5);
-
-	/* ISP_STANDBY */
-	if (system_rev < 3)
-		ret = gpio_direction_output(GPIO_ISP_STANDBY_R1, 1);
-	else
-		ret = gpio_direction_output(GPIO_ISP_STANDBY, 1);
-
-	CAM_CHECK_ERR_RET(ret, "output GPIO_ISP_STANDBY");
-	udelay(100);		/* 2000 cycle */
-
-	/* ISP_RESET */
-	ret = gpio_direction_output(GPIO_ISP_RESET, 1);
-	CAM_CHECK_ERR_RET(ret, "output GPIO_ISP_RESET");
-	udelay(10);		/* 200 cycle */
-
-	s5c73m3_gpio_free();
-
-	return ret;
-}
-
-static int s5c73m3_power_down(void)
-{
-	struct regulator *regulator;
-	int ret = 0;
-
-	printk(KERN_DEBUG "%s: in\n", __func__);
-
-	s5c73m3_gpio_request();
-
-	/* ISP_STANDBY */
-	if (system_rev < 3)
-		ret = gpio_direction_output(GPIO_ISP_STANDBY_R1, 0);
-	else
-		ret = gpio_direction_output(GPIO_ISP_STANDBY, 0);
-
-	CAM_CHECK_ERR_RET(ret, "output GPIO_ISP_STANDBY");
-	udelay(2);		/* 40 cycle */
-
-	/* ISP_RESET */
-	ret = gpio_direction_output(GPIO_ISP_RESET, 0);
-	CAM_CHECK_ERR_RET(ret, "output GPIO_ISP_RESET");
-
-	/* CAM_AF_2.8V */
-	if (system_rev < 3)
-		ret = gpio_direction_output(GPIO_CAM_AF_EN_R1, 0);
-	else
-		ret = gpio_direction_output(GPIO_CAM_AF_EN, 0);
-
-	CAM_CHECK_ERR_RET(ret, "output GPIO_CAM_AF_EN");
-
-	/* CAM_ISP_MIPI_1.2V */
-	regulator = regulator_get(NULL, "cam_isp_mipi_1.2v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	if (regulator_is_enabled(regulator))
-		ret = regulator_force_disable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR(ret, "disable cam_isp_mipi_1.2v");
-	udelay(10);		/* 200 cycle */
-
-	/* CAM_ISP_SENSOR_1.8V */
-	regulator = regulator_get(NULL, "cam_isp_sensor_1.8v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	if (regulator_is_enabled(regulator))
-		ret = regulator_force_disable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR(ret, "disable cam_isp_sensor_1.8v");
-
-	/* CAM_SENSOR_CORE_1.2V */
-#if defined(CONFIG_MACH_C1) || defined(CONFIG_MACH_T0) || \
-	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN)
-	if (system_rev >= USE_8M_CAM_SENSOR_CORE_REVISION) {
-		ret = gpio_direction_output(GPIO_CAM_SENSOR_CORE_EN, 0);
-		CAM_CHECK_ERR_RET(ret, "output CAM_SENSOR_CORE_EN");
-		udelay(500);
-	} else {
-		regulator = regulator_get(NULL, "cam_sensor_core_1.2v");
-		if (IS_ERR(regulator))
-			return -ENODEV;
-		if (regulator_is_enabled(regulator))
-			ret = regulator_force_disable(regulator);
-		regulator_put(regulator);
-		CAM_CHECK_ERR(ret, "disable cam_sensor_core_1.2v");
-		/* delay is needed : hw request*/
-		udelay(500);
-	}
-#else
-	regulator = regulator_get(NULL, "cam_sensor_core_1.2v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	if (regulator_is_enabled(regulator))
-		ret = regulator_force_disable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR(ret, "disable cam_sensor_core_1.2v");
-	/* delay is needed : hw request*/
-	udelay(500);
-#endif
-
-	/* CAM_SENSOR_A2.8V */
-	if (system_rev < 3)
-		ret = gpio_direction_output(GPIO_CAM_IO_EN_R1, 0);
-	else
-		ret = gpio_direction_output(GPIO_CAM_IO_EN, 0);
-
-	CAM_CHECK_ERR_RET(ret, "output GPIO_CAM_IO_EN");
-
-	/* CAM_ISP_CORE_1.2V */
-	regulator = regulator_get(NULL, "cam_isp_core_1.2v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	if (regulator_is_enabled(regulator))
-		ret = regulator_force_disable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR(ret, "disable cam_isp_core_1.2v");
-
-	if (system_rev < 3)
-		ret = gpio_direction_output(GPIO_ISP_CORE_EN_R1, 0);
-	else
-		ret = gpio_direction_output(GPIO_ISP_CORE_EN, 0);
-
-	CAM_CHECK_ERR_RET(ret, "output GPIO_CAM_ISP_CORE_EN");
-	/* delay is needed : hw request*/
-	mdelay(30);
-
-	/* MCLK */
-	ret = s3c_gpio_cfgpin(GPIO_CAM_MCLK, S3C_GPIO_INPUT);
-	s3c_gpio_setpull(GPIO_CAM_MCLK, S3C_GPIO_PULL_DOWN);
-	CAM_CHECK_ERR(ret, "cfg mclk");
-
-	s5c73m3_gpio_free();
-
-	return ret;
-}
-
-#else /* !CONFIG_MACH_M3_JPN_DCM */
 static int s5c73m3_gpio_request(void)
 {
 	int ret = 0;
@@ -1231,22 +719,28 @@ static int s5c73m3_gpio_request(void)
 		printk(KERN_ERR "fail to request gpio(GPIO_CAM_IO_EN)\n");
 		return ret;
 	}
-
+#if defined(CONFIG_MACH_M3_JPN_DCM)
+	ret = gpio_request(GPIO_CAM_AF_EN, "GPM1");
+#else
 	ret = gpio_request(GPIO_CAM_AF_EN, "GPM0");
+#endif
 	if (ret) {
 		printk(KERN_ERR "faile to request gpio(GPIO_CAM_AF_EN)\n");
 		return ret;
 	}
 
+#if defined(CONFIG_MACH_M3_JPN_DCM)
+	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM1");
+#else
 	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
+#endif
 	if (ret) {
 		printk(KERN_ERR "fail to request gpio(GPIO_ISP_CORE_EN)\n");
 		return ret;
 	}
 
 #if defined(CONFIG_MACH_C1) || defined(CONFIG_MACH_T0) || \
-	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN) || \
-	defined(CONFIG_MACH_M3_USA_TMO)
+	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN)
 	if (system_rev >= USE_8M_CAM_SENSOR_CORE_REVISION) {
 		ret = gpio_request(GPIO_CAM_SENSOR_CORE_EN, "GPM0");
 		if (ret) {
@@ -1262,14 +756,13 @@ static int s5c73m3_gpio_request(void)
 static void s5c73m3_gpio_free(void)
 {
 	gpio_free(GPIO_ISP_STANDBY);
-	gpio_free(GPIO_CAM_IO_EN);
 	gpio_free(GPIO_ISP_RESET);
+	gpio_free(GPIO_CAM_IO_EN);
 	gpio_free(GPIO_CAM_AF_EN);
 	gpio_free(GPIO_ISP_CORE_EN);
 
 #if defined(CONFIG_MACH_C1) || defined(CONFIG_MACH_T0) || \
-	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN) || \
-	defined(CONFIG_MACH_M3_USA_TMO)
+	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN)
 	if (system_rev >= USE_8M_CAM_SENSOR_CORE_REVISION)
 		gpio_free(GPIO_CAM_SENSOR_CORE_EN);
 #endif
@@ -1307,8 +800,7 @@ static int s5c73m3_power_on(void)
 
 	/* CAM_SENSOR_CORE_1.2V */
 #if defined(CONFIG_MACH_C1) || defined(CONFIG_MACH_T0) || \
-	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN) || \
-	defined(CONFIG_MACH_M3_USA_TMO)
+	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN)
 	printk(KERN_DEBUG "system_rev : %d\n", system_rev);
 	if (system_rev >= USE_8M_CAM_SENSOR_CORE_REVISION) {
 		ret = gpio_direction_output(GPIO_CAM_SENSOR_CORE_EN, 1);
@@ -1427,8 +919,7 @@ static int s5c73m3_power_down(void)
 
 	/* CAM_SENSOR_CORE_1.2V */
 #if defined(CONFIG_MACH_C1) || defined(CONFIG_MACH_T0) || \
-	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN) || \
-	defined(CONFIG_MACH_M3_USA_TMO)
+	defined(CONFIG_MACH_SLP_T0_LTE) || defined(CONFIG_MACH_BAFFIN)
 	if (system_rev >= USE_8M_CAM_SENSOR_CORE_REVISION) {
 		ret = gpio_direction_output(GPIO_CAM_SENSOR_CORE_EN, 0);
 		CAM_CHECK_ERR_RET(ret, "output CAM_SENSOR_CORE_EN");
@@ -1483,7 +974,6 @@ static int s5c73m3_power_down(void)
 
 	return ret;
 }
-#endif /* !CONFIG_MACH_M3_JPN_DCM */
 
 static int s5c73m3_power(int enable)
 {
@@ -1593,8 +1083,11 @@ static int m5mo_power_on(void)
 		printk(KERN_ERR "faile to request gpio(GPIO_CAM_VGA_nRST)\n");
 		return ret;
 	}
-
-		ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
+#if defined(CONFIG_MACH_M3_JPN_DCM)
+	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM1");
+#else
+	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
+#endif
 	if (ret) {
 		printk(KERN_ERR "fail to request gpio(CAM_SENSOR_CORE)\n");
 		return ret;
@@ -1614,7 +1107,7 @@ static int m5mo_power_on(void)
 	udelay(10);
 
 	/* CAM_ISP_CORE_1.2V */
-		ret = gpio_direction_output(GPIO_ISP_CORE_EN, 1);
+	ret = gpio_direction_output(GPIO_ISP_CORE_EN, 1);
 	CAM_CHECK_ERR_RET(ret, "output GPIO_ISP_CORE_EN");
 
 	regulator = regulator_get(NULL, "cam_isp_core_1.2v");
@@ -1709,7 +1202,7 @@ static int m5mo_power_on(void)
 
 	gpio_free(GPIO_CAM_VT_nSTBY);
 	gpio_free(GPIO_CAM_VT_nRST);
-		gpio_free(GPIO_ISP_CORE_EN);
+	gpio_free(GPIO_ISP_CORE_EN);
 	gpio_free(GPIO_ISP_RESET);
 
 	return ret;
@@ -1732,7 +1225,11 @@ static int m5mo_power_down(void)
 		printk(KERN_ERR "faile to request gpio(GPIO_CAM_VGA_nRST)\n");
 		return ret;
 	}
-		ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
+#if defined(CONFIG_MACH_M3_JPN_DCM)
+	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM1");
+#else
+	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
+#endif
 	if (ret) {
 		printk(KERN_ERR "fail to request gpio(CAM_SENSOR_CORE)\n");
 		return ret;
@@ -1828,7 +1325,7 @@ static int m5mo_power_down(void)
 	udelay(5);
 
 	/* CAM_ISP_CORE_1.2V */
-		ret = gpio_direction_output(GPIO_ISP_CORE_EN, 0);
+	ret = gpio_direction_output(GPIO_ISP_CORE_EN, 0);
 	CAM_CHECK_ERR(ret, "output ISP_CORE");
 
 	regulator = regulator_get(NULL, "cam_isp_core_1.2v");
@@ -1949,7 +1446,11 @@ static int m9mo_power_on(void)
 
 	printk(KERN_DEBUG "%s: in\n", __func__);
 
+#if defined(CONFIG_MACH_M3_JPN_DCM)
+	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM1");
+#else
 	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
+#endif
 	if (ret) {
 		printk(KERN_ERR "faile to request gpio(GPIO_ISP_CORE_EN)\n");
 		return ret;
@@ -2023,7 +1524,7 @@ static int m9mo_power_on(void)
 	CAM_CHECK_ERR_RET(ret, "output reset");
 	mdelay(4);
 
-		gpio_free(GPIO_ISP_CORE_EN);
+	gpio_free(GPIO_ISP_CORE_EN);
 	gpio_free(GPIO_ISP_RESET);
 
 	return ret;
@@ -2048,8 +1549,11 @@ static int m9mo_power_down(void)
 			return ret;
 		}
 	}
-
-		ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
+#if defined(CONFIG_MACH_M3_JPN_DCM)
+	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM1");
+#else
+	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
+#endif
 	if (ret) {
 		printk(KERN_ERR "faile to request gpio(GPIO_ISP_CORE_EN)\n");
 		return ret;
@@ -2140,7 +1644,7 @@ static int m9mo_power_down(void)
 	CAM_CHECK_ERR(ret, "disable, cam_isp_1.2v");
 
 	/* CAM_ISP_CORE_1.2V */
-		ret = gpio_direction_output(GPIO_ISP_CORE_EN, 0);
+	ret = gpio_direction_output(GPIO_ISP_CORE_EN, 0);
 	CAM_CHECK_ERR(ret, "output ISP_CORE");
 
 	if (system_rev > 0) {
@@ -2156,7 +1660,7 @@ static int m9mo_power_down(void)
 		gpio_free(GPIO_SAMBAZ_RESET);
 	}
 
-		gpio_free(GPIO_ISP_CORE_EN);
+	gpio_free(GPIO_ISP_CORE_EN);
 	gpio_free(GPIO_ISP_RESET);
 
 	return ret;
@@ -2378,6 +1882,15 @@ static int isx012_get_i2c_busnum(void)
 	return 0;
 }
 
+static atomic_t flash_status = ATOMIC_INIT(ISX012_FLASH_OFF);
+#ifdef CONFIG_MACH_KONA
+static int isx012_flash_en(u32 mode, u32 onoff)
+{
+	pr_info("[ISX012] %s: not supported!\n", __func__);
+	return 0;
+}
+#else
+
 static void isx012_flashtimer_handler(unsigned long data)
 {
 	int ret = -ENODEV;
@@ -2392,7 +1905,6 @@ static void isx012_flashtimer_handler(unsigned long data)
 
 }
 
-static atomic_t flash_status = ATOMIC_INIT(ISX012_FLASH_OFF);
 static int isx012_flash_en(u32 mode, u32 onoff)
 {
 	static int flash_mode = ISX012_FLASH_MODE_NORMAL;
@@ -2465,6 +1977,7 @@ out:
 	mutex_unlock(&flash_lock);
 	return 0;
 }
+#endif
 
 static int isx012_is_flash_on(void)
 {
@@ -2478,6 +1991,7 @@ static int isx012_power_on(void)
 	int ret = 0;
 
 	printk(KERN_DEBUG "[ISX012] power on\n");
+	printk(KERN_DEBUG "%s: system_rev=%d\n", __func__, system_rev);
 
 	ret = gpio_request(GPIO_5M_nSTBY, "GPJ0");
 	if (unlikely(ret)) {
@@ -2489,13 +2003,13 @@ static int isx012_power_on(void)
 		printk(KERN_ERR "error: request 5M_nRST\n");
 		return ret;
 	}
-#if 0
+
 	ret = gpio_request(GPIO_CAM_EN2, "GPJ0");
 	if (unlikely(ret)) {
 		printk(KERN_ERR "error: request CAM_EN2\n");
 		return ret;
 	}
-#endif
+
 	ret = gpio_request(GPIO_VT_CAM_nSTBY, "GPF2");
 	if (unlikely(ret)) {
 		printk(KERN_ERR "error: request VT_CAM_nSTBY\n");
@@ -2512,6 +2026,11 @@ static int isx012_power_on(void)
 	regulator = regulator_get(NULL, "3mp_core_1.2v");
 	if (IS_ERR(regulator))
 		return -ENODEV;
+
+#ifdef CONFIG_MACH_KONA_EUR_LTE /* HW request */
+	regulator_set_voltage(regulator, 1250000, 1250000);
+#endif
+
 	ret = regulator_enable(regulator);
 	regulator_put(regulator);
 	CAM_CHECK_ERR_RET(ret, "3mp_core_1.2v");
@@ -2527,16 +2046,19 @@ static int isx012_power_on(void)
 	udelay(10);
 
 	/* CAM_A2.8V */
-#if 1
-	regulator = regulator_get(NULL, "cam_a2.8v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	ret = regulator_enable(regulator);
-	regulator_put(regulator);
-#else
 	ret = gpio_direction_output(GPIO_CAM_EN2, 1);
-#endif
 	CAM_CHECK_ERR_RET(ret, "CAM_A2.8V");
+#if defined(CONFIG_MACH_KONA_EUR_OPEN) || defined(CONFIG_MACH_KONA_EUR_WIFI)
+	/* Kona 3G use PMIC for A2.8V on Rev0.0 */
+	if (system_rev < 1) {
+		regulator = regulator_get(NULL, "cam_a2.8v");
+		if (IS_ERR(regulator))
+			return -ENODEV;
+		ret = regulator_enable(regulator);
+		regulator_put(regulator);
+		CAM_CHECK_ERR(ret, "cam_a2.8v");
+	}
+#endif
 	udelay(10);
 
 	/* VT_CORE_1.8V */
@@ -2585,9 +2107,7 @@ static int isx012_power_on(void)
 
 	gpio_free(GPIO_5M_nSTBY);
 	gpio_free(GPIO_5M_nRST);
-#if 0
 	gpio_free(GPIO_CAM_EN2);
-#endif
 	gpio_free(GPIO_VT_CAM_nSTBY);
 	gpio_free(GPIO_VT_CAM_nRST);
 
@@ -2611,13 +2131,11 @@ static int isx012_power_down(void)
 		printk(KERN_ERR "error: request 3M_nRST\n");
 		return ret;
 	}
-#if 0
 	ret = gpio_request(GPIO_CAM_EN2, "GPJ0");
 	if (unlikely(ret)) {
 		printk(KERN_ERR "error: request CAM_EN2\n");
 		return ret;
 	}
-#endif
 	ret = gpio_request(GPIO_VT_CAM_nRST, "GPJ1");
 	if (unlikely(ret)) {
 		printk(KERN_ERR "error: request VT_CAM_nRST\n");
@@ -2666,22 +2184,22 @@ static int isx012_power_down(void)
 	CAM_CHECK_ERR(ret, "vt_core_1.8v");
 	udelay(5);
 
-
 	/* CAM_A2.8V */
-#if 1
-	regulator = regulator_get(NULL, "cam_a2.8v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	if (regulator_is_enabled(regulator))
-		ret = regulator_force_disable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR(ret, "cam_a2.8v");
-#else
 	ret = gpio_direction_output(GPIO_CAM_EN2, 0);
-#endif
 	CAM_CHECK_ERR_RET(ret, "CAM_A2.8V");
+#if defined(CONFIG_MACH_KONA_EUR_OPEN) || defined(CONFIG_MACH_KONA_EUR_WIFI)
+	/* Kona 3G use PMIC for A2.8V on Rev0.0 */
+	if (system_rev < 1) {
+		regulator = regulator_get(NULL, "cam_a2.8v");
+		if (IS_ERR(regulator))
+			return -ENODEV;
+		if (regulator_is_enabled(regulator))
+			ret = regulator_force_disable(regulator);
+		regulator_put(regulator);
+		CAM_CHECK_ERR(ret, "cam_a2.8v");
+	}
+#endif
 	udelay(5);
-
 	/* CAM_IO_1.8V */
 	regulator = regulator_get(NULL, "cam_io_1.8v");
 	if (IS_ERR(regulator))
@@ -2703,15 +2221,14 @@ static int isx012_power_down(void)
 
 	gpio_free(GPIO_5M_nSTBY);
 	gpio_free(GPIO_5M_nRST);
-#if 0
 	gpio_free(GPIO_CAM_EN2);
-#endif
 	gpio_free(GPIO_VT_CAM_nRST);
 	return ret;
 }
 
 #else /* ! CONFIG_MACH_KONA */
 
+/* Power up/down func for P4C, P2. */
 static int isx012_power_on(void)
 {
 	struct regulator *regulator;
@@ -2868,7 +2385,7 @@ static int isx012_power_down(void)
 
 	return ret;
 }
-#endif /* CONFIG_MACH_KONA */
+#endif
 
 static int isx012_power(int enable)
 {
@@ -2905,6 +2422,10 @@ static int isx012_enable_standby(bool enable)
 		return err;
 	}
 
+#ifdef CONFIG_MACH_KONA
+	udelay(200);
+#endif
+
 	/* GPIO_5M_nSTBY */
 	err = gpio_direction_output(GPIO_5M_nSTBY, enable ?
 			GPIO_LEVEL_LOW : GPIO_LEVEL_HIGH);
@@ -2914,6 +2435,7 @@ static int isx012_enable_standby(bool enable)
 	return 0;
 }
 
+#ifndef CONFIG_MACH_KONA
 static int px_cam_cfg_init(void)
 {
 	int ret = -ENODEV;
@@ -2941,6 +2463,7 @@ out_free:
 out:
 	return ret;
 }
+#endif
 
 static const char *isx012_get_clk_name(void)
 {
@@ -3036,6 +2559,19 @@ static ssize_t flash_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR(rear_flash, 0664, flash_show, flash_store);
 
+extern u32 isx012_get_vendorid(void);
+static ssize_t isx012_rear_vendorid_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	u32 vendorid = 0;
+
+	vendorid = isx012_get_vendorid();
+
+	return sprintf(buf, "0x%04X\n", vendorid);
+
+}
+static DEVICE_ATTR(rear_vendorid, S_IRUGO, isx012_rear_vendorid_show, NULL);
+
 int isx012_create_file(struct class *cls)
 {
 	struct device *dev_rear = NULL;
@@ -3061,6 +2597,11 @@ int isx012_create_file(struct class *cls)
 	if (unlikely(ret < 0))
 		pr_err("cam_init: failed to create device file, %s\n",
 			dev_attr_rear_flash.attr.name);
+		
+	ret = device_create_file(dev_rear, &dev_attr_rear_vendorid);
+	if (unlikely(ret < 0))
+		pr_err("cam_init: failed to create device file, %s\n",
+			dev_attr_rear_vendorid.attr.name);
 
 	return 0;
 }
@@ -3525,13 +3066,13 @@ static int sr130pc20_get_i2c_busnum(void)
 
 static int sr130pc20_flash_en(u32 mode, u32 onoff)
 {
-	pr_info("[SR130PC20] not supported!\n");
+	pr_info("[SR130PC20] %s: not supported!\n", __func__);
 	return 0;
 }
 
 static int sr130pc20_is_flash_on(void)
 {
-	pr_info("[SR130PC20] not supported!\n");
+	pr_info("[SR130PC20] %s: not supported!\n", __func__);
 	return 0;
 }
 
@@ -3541,13 +3082,13 @@ static int sr130pc20_power_on(void)
 	int ret = 0;
 
 	printk(KERN_DEBUG "[SR130PC20] power on\n");
-#if 0
+
 	ret = gpio_request(GPIO_CAM_EN2, "GPJ0");
 	if (unlikely(ret)) {
 		printk(KERN_ERR "error: request CAM_EN2\n");
 		return ret;
 	}
-#endif
+
 	ret = gpio_request(GPIO_VT_CAM_nSTBY, "GPF2");
 	if (unlikely(ret)) {
 		printk(KERN_ERR "error: request VT_CAM_nSTBY\n");
@@ -3579,15 +3120,18 @@ static int sr130pc20_power_on(void)
 	udelay(10);
 
 	/* CAM_A2.8V */
-#if 1
-	regulator = regulator_get(NULL, "cam_a2.8v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	ret = regulator_enable(regulator);
-	regulator_put(regulator);
-#else
-	ret = gpio_direction_output(GPIO_CAM_EN2, 1);
+#if defined(CONFIG_MACH_KONA_EUR_OPEN) || defined(CONFIG_MACH_KONA_EUR_WIFI)
+	/* Kona 3G use PMIC for A2.8V on Rev0.0 */
+	if (system_rev < 1) {
+		regulator = regulator_get(NULL, "cam_a2.8v");
+		if (IS_ERR(regulator))
+			return -ENODEV;
+		ret = regulator_enable(regulator);
+		regulator_put(regulator);
+		CAM_CHECK_ERR(ret, "cam_a2.8v");
+	}
 #endif
+	ret = gpio_direction_output(GPIO_CAM_EN2, 1);
 	CAM_CHECK_ERR_RET(ret, "CAM_A2.8V");
 	udelay(10);
 
@@ -3617,9 +3161,7 @@ static int sr130pc20_power_on(void)
 	CAM_CHECK_ERR(ret, "VT_CAM_nRST");
 	usleep_range(1100, 1200);
 
-#if 0
 	gpio_free(GPIO_CAM_EN2);
-#endif
 	gpio_free(GPIO_VT_CAM_nSTBY);
 	gpio_free(GPIO_VT_CAM_nRST);
 	return ret;
@@ -3632,13 +3174,11 @@ static int sr130pc20_power_down(void)
 
 	printk(KERN_DEBUG "[SR130PC20] power down\n");
 
-#if 0
 	ret = gpio_request(GPIO_CAM_EN2, "GPJ0");
 	if (unlikely(ret)) {
 		printk(KERN_ERR "error: request CAM_EN2\n");
 		return ret;
 	}
-#endif
 	ret = gpio_request(GPIO_VT_CAM_nSTBY, "GPF2");
 	if (unlikely(ret)) {
 		printk(KERN_ERR "error: request VT_CAM_nSTBY\n");
@@ -3677,17 +3217,19 @@ static int sr130pc20_power_down(void)
 	udelay(5);
 
 	/* CAM_A2.8V */
-#if 1
-	regulator = regulator_get(NULL, "cam_a2.8v");
-	if (IS_ERR(regulator))
-		return -ENODEV;
-	if (regulator_is_enabled(regulator))
-		ret = regulator_force_disable(regulator);
-	regulator_put(regulator);
-	CAM_CHECK_ERR(ret, "cam_a2.8v");
-#else
-	ret = gpio_direction_output(GPIO_CAM_EN2, 0);
+#if defined(CONFIG_MACH_KONA_EUR_OPEN) || defined(CONFIG_MACH_KONA_EUR_WIFI)
+	/* Kona 3G use PMIC for A2.8V on Rev0.0 */
+	if (system_rev < 1) {
+		regulator = regulator_get(NULL, "cam_a2.8v");
+		if (IS_ERR(regulator))
+			return -ENODEV;
+		if (regulator_is_enabled(regulator))
+			ret = regulator_force_disable(regulator);
+		regulator_put(regulator);
+		CAM_CHECK_ERR(ret, "cam_a2.8v");
+	}
 #endif
+	ret = gpio_direction_output(GPIO_CAM_EN2, 0);
 	CAM_CHECK_ERR_RET(ret, "CAM_A2.8V");
 	udelay(5);
 
@@ -3710,9 +3252,7 @@ static int sr130pc20_power_down(void)
 	regulator_put(regulator);
 	CAM_CHECK_ERR(ret, "3mp_core_1.2v");
 
-#if 0
 	gpio_free(GPIO_CAM_EN2);
-#endif
 	gpio_free(GPIO_VT_CAM_nSTBY);
 	gpio_free(GPIO_VT_CAM_nRST);
 	return ret;
@@ -3743,13 +3283,13 @@ static int sr130pc20_power(int enable)
 
 static int sr130pc20_enable_standby(bool enable)
 {
-	pr_info("[SR130PC20] not supported!\n");
+	pr_info("[SR130PC20] %s not supported!\n", __func__);
 	return 0;
 }
 
 static const char *sr130pc20_get_clk_name(void)
 {
-	return "sclk_cam0";
+	return "sclk_cam1";
 }
 
 static struct sr130pc20_platform_data sr130pc20_plat = {
@@ -3804,6 +3344,47 @@ static struct s3c_platform_camera sr130pc20 = {
 	.reset_camera	= 0,
 	.initialized	= 0,
 };
+
+static ssize_t sr130pc20_camtype_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	const char cam_type[] = "SF_SR130PC20";
+	pr_info("%s\n", __func__);
+	return sprintf(buf, "%s\n", cam_type);
+}
+static DEVICE_ATTR(front_camtype, S_IRUGO, sr130pc20_camtype_show, NULL);
+
+static ssize_t sr130pc20_camfw_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	char type[] = "SR130PC20";
+	return sprintf(buf, "%s %s\n", type, type);
+}
+static DEVICE_ATTR(front_camfw, S_IRUGO, sr130pc20_camfw_show, NULL);
+
+int sr130pc20_create_file(struct class *cls)
+{
+	struct device *dev_front = NULL;
+	int ret = -ENODEV;
+
+	dev_front = device_create(cls, NULL, 0, NULL, "front");
+	if (IS_ERR(dev_front)) {
+		pr_err("cam_init: failed to create device(frontcam_dev)\n");
+		return -ENODEV;
+	}
+
+	ret = device_create_file(dev_front, &dev_attr_front_camtype);
+	if (unlikely(ret < 0))
+		pr_err("cam_init: failed to create device file, %s\n",
+			dev_attr_front_camtype.attr.name);
+
+	ret = device_create_file(dev_front, &dev_attr_front_camfw);
+	if (unlikely(ret < 0))
+		pr_err("cam_init: failed to create device file, %s\n",
+			dev_attr_front_camtype.attr.name);
+
+	return 0;
+}
 #endif /* CONFIG_VIDEO_SR130PC20*/
 
 #ifdef CONFIG_VIDEO_SR200PC20M
@@ -3827,7 +3408,11 @@ static int sr200pc20m_power_on(void)
 		printk(KERN_ERR "faile to request gpio(GPIO_CAM_VGA_nRST)\n");
 		return ret;
 	}
+#if defined(CONFIG_MACH_M3_JPN_DCM)
+	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM1");
+#else
 	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
+#endif
 	if (ret) {
 		printk(KERN_ERR "fail to request gpio(CAM_SENSOR_CORE)\n");
 		return ret;
@@ -3851,7 +3436,7 @@ static int sr200pc20m_power_on(void)
 	CAM_CHECK_ERR(ret, "output reset");
 
 	/* CAM_ISP_CORE_1.2V */
-		ret = gpio_direction_output(GPIO_ISP_CORE_EN, 1);
+	ret = gpio_direction_output(GPIO_ISP_CORE_EN, 1);
 	CAM_CHECK_ERR_RET(ret, "output GPIO_ISP_CORE_EN");
 
 	regulator = regulator_get(NULL, "cam_isp_core_1.2v");
@@ -3922,7 +3507,7 @@ static int sr200pc20m_power_on(void)
 
 	gpio_free(GPIO_CAM_VT_nSTBY);
 	gpio_free(GPIO_CAM_VT_nRST);
-		gpio_free(GPIO_ISP_CORE_EN);
+	gpio_free(GPIO_ISP_CORE_EN);
 	gpio_free(GPIO_ISP_RESET);
 
 	return ret;
@@ -3945,7 +3530,11 @@ static int sr200pc20m_power_off(void)
 		printk(KERN_ERR "faile to request gpio(GPIO_CAM_VGA_nRST)\n");
 		return ret;
 	}
+#if defined(CONFIG_MACH_M3_JPN_DCM)
+	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM1");
+#else
 	ret = gpio_request(GPIO_ISP_CORE_EN, "GPM0");
+#endif
 	if (ret) {
 		printk(KERN_ERR "fail to request gpio(CAM_SENSOR_CORE)\n");
 		return ret;
@@ -3986,7 +3575,7 @@ static int sr200pc20m_power_off(void)
 	udelay(5);
 
 	/* CAM_ISP_CORE_1.2V */
-		ret = gpio_direction_output(GPIO_ISP_CORE_EN, 0);
+	ret = gpio_direction_output(GPIO_ISP_CORE_EN, 0);
 	CAM_CHECK_ERR(ret, "output ISP_CORE");
 
 	regulator = regulator_get(NULL, "cam_isp_core_1.2v");
@@ -4029,7 +3618,7 @@ static int sr200pc20m_power_off(void)
 
 	gpio_free(GPIO_CAM_VT_nSTBY);
 	gpio_free(GPIO_CAM_VT_nRST);
-		gpio_free(GPIO_ISP_CORE_EN);
+	gpio_free(GPIO_ISP_CORE_EN);
 	gpio_free(GPIO_ISP_RESET);
 
 	return ret;
@@ -4466,6 +4055,9 @@ static struct s3c_platform_fimc fimc_plat = {
 #ifdef CONFIG_VIDEO_SR200PC20
 		&sr200pc20,
 #endif
+#ifdef CONFIG_VIDEO_SR130PC20
+		&sr130pc20,
+#endif
 #ifdef WRITEBACK_ENABLED
 		&writeback,
 #endif
@@ -4608,9 +4200,7 @@ void __init midas_camera_init(void)
 #endif
 #endif /* CONFIG_VIDEO_S5P_FIMC */
 
-#if defined(CONFIG_MACH_P4NOTE) || defined(CONFIG_MACH_KONA)
-#if defined(CONFIG_VIDEO_ISX012)
+#if defined(CONFIG_MACH_P4NOTE) && defined(CONFIG_VIDEO_ISX012)
 	px_cam_cfg_init();
-#endif
 #endif
 }

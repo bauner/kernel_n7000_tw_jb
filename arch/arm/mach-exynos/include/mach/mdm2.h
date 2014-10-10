@@ -48,8 +48,5 @@ struct mdm_hsic_pm_platform_data {
 	struct device *dev;
 };
 
-#ifdef CONFIG_FAST_BOOT
-extern bool fake_shut_down;
-#endif
 #endif
 
