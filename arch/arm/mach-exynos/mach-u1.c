@@ -375,7 +375,7 @@ static int m5mo_power_on(void)
 	ret = regulator_enable(regulator);
 	regulator_put(regulator);
 	CAM_CHECK_ERR_RET(ret, "enable cam_isp_core");
-	udelay(15);
+	/* No delay */
 
 	/* CAM_SENSOR_CORE_1.2V */
 	ret = gpio_direction_output(GPIO_CAM_SENSOR_CORE, 1);
@@ -395,6 +395,9 @@ static int m5mo_power_on(void)
 
 	/* VT_CORE_1.5V */
 	ret = gpio_direction_output(GPIO_VT_CAM_15V, 1);
+#ifdef CONFIG_TARGET_LOCALE_NA
+	s3c_gpio_setpull(GPIO_VT_CAM_15V, S3C_GPIO_PULL_NONE);
+#endif /* CONFIG_TARGET_LOCALE_NA */
 	CAM_CHECK_ERR_RET(ret, "output VT_CAM_1.5V");
 	udelay(20);
 
@@ -836,12 +839,26 @@ static int m5mo_power(int enable)
 
 	printk(KERN_DEBUG "%s %s\n", __func__, enable ? "on" : "down");
 	if (enable) {
+#if defined(CONFIG_TARGET_LOCALE_NA)
+		exynos_cpufreq_lock(DVFS_LOCK_ID_CAM, 1);
 		ret = m5mo_power_on();
+		exynos_cpufreq_lock_free(DVFS_LOCK_ID_CAM);
+#else
+
+		ret = m5mo_power_on();
+#endif
 		if (unlikely(ret))
 			goto error_out;
-	} else
+	} else {
+#if defined(CONFIG_TARGET_LOCALE_NA)
+		exynos_cpufreq_lock(DVFS_LOCK_ID_CAM, 1);
 		ret = m5mo_power_down();
+		exynos_cpufreq_lock_free(DVFS_LOCK_ID_CAM);
+#else
 
+		ret = m5mo_power_down();
+#endif
+	}
 	ret = s3c_csis_power(enable);
 	m5mo_flash_power(enable);
 
@@ -2073,9 +2090,9 @@ static struct spi_board_info spi0_board_info[] __initdata = {
 		.controller_data	=	&spi0_csi[0],
 	},
 
-#elif defined(CONFIG_LINK_DEVICE_SPI)
+#elif defined(CONFIG_PHONE_IPC_SPI)
 	{
-		.modalias = "modem_if_spi",
+		.modalias = "ipc_spi",
 		.bus_num = 0,
 		.chip_select = 0,
 		.max_speed_hz = 12*1000*1000,
@@ -4169,78 +4186,79 @@ static struct platform_device samsung_device_battery = {
 #ifdef CONFIG_TARGET_LOCALE_KOR
 /* temperature table for ADC 6 */
 static struct sec_bat_adc_table_data temper_table[] =  {
-	{ 264,    570 },
-	{ 282,    560 },
-	{ 301,    550 },
-	{ 319,    540 },
-	{ 338,    530 },
-	{ 356,    520 },
-	{ 375,    510 },
-	{ 394,    500 },
-	{ 413,    490 },
-	{ 432,    480 },
-	{ 451,    470 },
-	{ 470,    460 },
-	{ 489,    450 },
-	{ 508,    440 },
-	{ 527,    430 },
-	{ 546,    420 },
-	{ 565,    410 },
-	{ 584,    400 },
-	{ 603,    390 },
-	{ 622,    380 },
-	{ 641,    370 },
-	{ 666,    360 },
-	{ 692,    350 },
-	{ 718,    340 },
-	{ 744,    330 },
-	{ 770,    320 },
-	{ 796,    310 },
-	{ 822,    300 },
-	{ 848,    290 },
-	{ 874,    280 },
-	{ 900,    270 },
-	{ 926,    260 },
-	{ 952,    250 },
-	{ 978,    240 },
-	{ 1004,   230 },
-	{ 1030,   220 },
-	{ 1056,   210 },
-	{ 1082,   200 },
-	{ 1108,   190 },
-	{ 1131,   180 },
-	{ 1155,   170 },
-	{ 1178,   160 },
-	{ 1202,   150 },
-	{ 1226,   140 },
-	{ 1251,   130 },
-	{ 1275,   120 },
-	{ 1299,   110 },
-	{ 1324,   100 },
-	{ 1348,    90 },
-	{ 1372,    80 },
-	{ 1396,    70 },
-	{ 1421,    60 },
-	{ 1445,    50 },
-	{ 1468,    40 },
-	{ 1491,    30 },
-	{ 1513,    20 },
-	{ 1536,    10 },
-	{ 1559,     0 },
-	{ 1573,   -10 },
-	{ 1588,   -20 },
-	{ 1603,   -30 },
-	{ 1618,   -40 },
-	{ 1633,   -50 },
-	{ 1648,   -60 },
-	{ 1663,   -70 },
-	{ 1678,   -80 },
-	{ 1693,   -90 },
-	{ 1705,  -100 },
-	{ 1720,  -110 },
-	{ 1736,  -120 },
-	{ 1751,  -130 },
-	{ 1767,  -140 },
+	{  264,	 500 },
+	{  275,	 490 },
+	{  286,	 480 },
+	{  293,	 480 },
+	{  299,	 470 },
+	{  306,	 460 },
+	{  324,	 450 },
+	{  341,	 450 },
+	{  354,	 440 },
+	{  368,	 430 },
+	{  381,	 420 },
+	{  396,	 420 },
+	{  411,	 410 },
+	{  427,	 400 },
+	{  442,	 390 },
+	{  457,	 390 },
+	{  472,	 380 },
+	{  487,	 370 },
+	{  503,	 370 },
+	{  518,	 360 },
+	{  533,	 350 },
+	{  554,	 340 },
+	{  574,	 330 },
+	{  595,	 330 },
+	{  615,	 320 },
+	{  636,	 310 },
+	{  656,	 310 },
+	{  677,	 300 },
+	{  697,	 290 },
+	{  718,	 280 },
+	{  738,	 270 },
+	{  761,	 270 },
+	{  784,	 260 },
+	{  806,	 250 },
+	{  829,	 240 },
+	{  852,	 230 },
+	{  875,	 220 },
+	{  898,	 210 },
+	{  920,	 200 },
+	{  943,	 190 },
+	{  966,	 180 },
+	{  990,	 170 },
+	{ 1013,	 160 },
+	{ 1037,	 150 },
+	{ 1060,	 140 },
+	{ 1084,	 130 },
+	{ 1108,	 120 },
+	{ 1131,	 110 },
+	{ 1155,	 100 },
+	{ 1178,	  90 },
+	{ 1202,	  80 },
+	{ 1226,	  70 },
+	{ 1251,	  60 },
+	{ 1275,	  50 },
+	{ 1299,	  40 },
+	{ 1324,	  30 },
+	{ 1348,	  20 },
+	{ 1372,	  10 },
+	{ 1396,	   0 },
+	{ 1421,	 -10 },
+	{ 1445,	 -20 },
+	{ 1468,	 -30 },
+	{ 1491,	 -40 },
+	{ 1513,	 -50 },
+	{ 1536,	 -60 },
+	{ 1559,	 -70 },
+	{ 1577,	 -80 },
+	{ 1596,	 -90 },
+	{ 1614,	 -100 },
+	{ 1619,	 -110 },
+	{ 1632,	 -120 },
+	{ 1658,	 -130 },
+	{ 1667,	 -140 },
 };
 #elif defined(CONFIG_TARGET_LOCALE_NTT)
 /* temperature table for ADC 6 */
@@ -4586,6 +4604,94 @@ static struct sec_bat_adc_table_data temper_table_ADC7[] =  {
 	{ 1669,	 -60 },
 	{ 1688,	 -70 },
 };
+#endif
+/* temperature table for ADC 7 */
+#ifdef CONFIG_TARGET_LOCALE_NA
+static struct sec_bat_adc_table_data  temper_table_ADC7[] =  {
+	{  145,  670 },
+	{  165,  660 },
+	{  185,  650 },
+	{  205,  640 },
+	{  225,  630 },
+	{  245,  620 },
+	{  265,  610 },
+	{  285,  600 },
+	{  305,  590 },
+	{  325,  580 },
+	{  345,  570 },
+	{  365,  560 },
+	{  385,  550 },
+	{  405,  540 },
+	{  425,  530 },
+	{  445,  520 },
+	{  465,  510 },
+	{  485,  500 },
+	{  505,  490 },
+	{  525,  480 },
+	{  545,  470 },
+	{  565,  460 },
+	{  585,  450 },
+	{  605,  440 },
+	{  625,  430 },
+	{  645,  420 },
+	{  665,  410 },
+	{  685,  400 },
+	{  705,  390 },
+	{  725,  380 },
+	{  745,  370 },
+	{  765,  360 },
+	{  785,  350 },
+	{  805,  340 },
+	{  825,  330 },
+	{  845,  320 },
+	{  865,  310 },
+	{  885,  300 },
+	{  905,  290 },
+	{  925,  280 },
+	{  945,  270 },
+	{  965,  260 },
+	{  995,  250 },
+	{ 1015,  240 },
+	{ 1045,  230 },
+	{ 1065,  220 },
+	{ 1085,  210 },
+	{ 1105,  200 },
+	{ 1125,  190 },
+	{ 1145,  180 },
+	{ 1165,  170 },
+	{ 1185,  160 },
+	{ 1205,  150 },
+	{ 1225,  140 },
+	{ 1245,  130 },
+	{ 1265,  120 },
+	{ 1285,  110 },
+	{ 1305,  100 },
+	{ 1335,   90 },
+	{ 1365,   80 },
+	{ 1395,   70 },
+	{ 1425,   60 },
+	{ 1455,   50 },
+	{ 1475,   40 },
+	{ 1495,   30 },
+	{ 1515,   20 },
+	{ 1535,   10 },
+	{ 1545,    0 },
+	{ 1555,  -10 },
+	{ 1565,  -20 },
+	{ 1575,  -30 },
+	{ 1585,  -40 },
+	{ 1595,  -50 },
+	{ 1605,  -60 },
+	{ 1615,  -70 },
+	{ 1625,  -80 },
+	{ 1635,  -90 },
+	{ 1645,  -100 },
+	{ 1655,  -110 },
+	{ 1665,  -120 },
+	{ 1675,  -130 },
+	{ 1685,  -140 },
+};
+
 #else
 /* temperature table for ADC 7 */
 static struct sec_bat_adc_table_data temper_table_ADC7[] = {
@@ -4693,7 +4799,6 @@ static struct sec_bat_adc_table_data temper_table_ADC7[] = {
 };
 #endif
 
-#define ADC_CH_VF	2
 #define ADC_CH_TEMPERATURE_PMIC	6
 #define ADC_CH_TEMPERATURE_LCD	7
 
@@ -4740,10 +4845,6 @@ static struct sec_bat_platform_data sec_bat_pdata = {
 	.adc_sub_table		= temper_table_ADC7,
 	.adc_sub_channel	= ADC_CH_TEMPERATURE_LCD,
 	.get_lpcharging_state	= sec_bat_get_lpcharging_state,
-#if defined(CONFIG_TARGET_LOCALE_NAATT) || \
-	defined(CONFIG_TARGET_LOCALE_NAATT_TEMP)
-	.adc_vf_channel = ADC_CH_VF,
-#endif
 #if defined(CONFIG_MACH_Q1_BD)
 	.initial_check		= sec_bat_initial_check,
 #else
@@ -5068,55 +5169,11 @@ static struct sec_therm_adc_table adc_ch6_table[] = {
 };
 #endif
 
-/* when the next level is same as prev, returns -1 */
-static int get_exynos4210_siop_level(int temp)
-{
-	static int prev_temp = 400;
-	static int prev_level;
-	int level = -1;
-
-	if (temp > prev_temp) {
-		if (temp >= 610)
-			level = 4;
-		else if (temp >= 590)
-			level = 3;
-		else if (temp >= 540)
-			level = 2;
-		else if (temp >= 510)
-			level = 1;
-		else
-			level = 0;
-	} else {
-		if (temp < 480)
-			level = 0;
-		else if (temp < 510)
-			level = 1;
-		else if (temp < 540)
-			level = 2;
-		else if (temp < 590)
-			level = 3;
-		else
-			level = 4;
-
-		if (level > prev_level)
-			level = prev_level;
-	}
-
-	prev_temp = temp;
-	if (prev_level == level)
-		return -1;
-
-	prev_level = level;
-
-	return level;
-}
-
 static struct sec_therm_platform_data sec_therm_pdata = {
 	.adc_channel	= 6,
 	.adc_arr_size	= ARRAY_SIZE(adc_ch6_table),
 	.adc_table	= adc_ch6_table,
 	.polling_interval = 30 * 1000, /* msecs */
-	.get_siop_level = get_exynos4210_siop_level,
 };
 
 static struct platform_device sec_device_thermistor = {
@@ -5155,7 +5212,7 @@ struct gpio_keys_button u1_buttons[] = {
 		.isr_hook = sec_debug_check_crash_key,
 		.debounce_interval = 10,
 	},			/* power key */
-#if !defined(CONFIG_MACH_U1_NA_SPR) && !defined(CONFIG_MACH_U1_NA_USCC)
+#if !defined(CONFIG_MACH_U1_NA_SPR) && !defined(CONFIG_MACH_U1_NA_USCC) && !defined(CONFIG_TARGET_LOCALE_NAATT_TEMP)
 	{
 		.code = KEY_HOMEPAGE,
 		.gpio = GPIO_OK_KEY,
@@ -5246,7 +5303,7 @@ static struct sec_jack_buttons_zone sec_jack_buttons_zones[] = {
 		/* 0 <= adc <=170, stable zone */
 		.code = KEY_MEDIA,
 		.adc_low = 0,
-#if defined(CONFIG_TARGET_LOCALE_NTT)
+#if defined(CONFIG_TARGET_LOCALE_NTT) || defined(CONFIG_TARGET_LOCALE_NA)
 		.adc_high = 150,
 #else
 		.adc_high = 170,
@@ -5255,7 +5312,7 @@ static struct sec_jack_buttons_zone sec_jack_buttons_zones[] = {
 	{
 		/* 171 <= adc <= 370, stable zone */
 		.code = KEY_VOLUMEUP,
-#if defined(CONFIG_TARGET_LOCALE_NTT)
+#if defined(CONFIG_TARGET_LOCALE_NTT) || defined(CONFIG_TARGET_LOCALE_NA)
 		.adc_low = 151,
 #else
 		.adc_low = 171,
@@ -5278,9 +5335,6 @@ static struct sec_jack_platform_data sec_jack_data = {
 	.num_buttons_zones = ARRAY_SIZE(sec_jack_buttons_zones),
 	.det_gpio = GPIO_DET_35,
 	.send_end_gpio = GPIO_EAR_SEND_END,
-#ifdef CONFIG_JACK_RESELECTOR_SUPPORT
-	.ear_reselector_zone = 3450,
-#endif
 };
 
 static struct platform_device sec_device_jack = {
@@ -5520,10 +5574,14 @@ static const u8 *mxt224_config[] = {
 #define MXT224E_NEXTTCHDI_NORMAL		0
 #define MXT224E_NEXTTCHDI_CHRG		1
 #else
-#define MXT224E_THRESHOLD_BATT		50
+#define MXT224E_THRESHOLD_BATT		40
 #define MXT224E_T48_THRESHOLD_BATT		28
-#define MXT224E_THRESHOLD_CHRG		40
+#define MXT224E_THRESHOLD_CHRG		37
+#if defined(CONFIG_MACH_U1_NA_SPR)
+#define MXT224E_CALCFG_BATT		0x72
+#else
 #define MXT224E_CALCFG_BATT		0x42
+#endif
 #define MXT224E_CALCFG_CHRG		0x52
 #if defined(CONFIG_TARGET_LOCALE_NA)
 #define MXT224E_ATCHFRCCALTHR_NORMAL		45
@@ -6304,27 +6362,6 @@ static struct i2c_board_info i2c_devs4[] __initdata = {
 #endif /* CONFIG_WIMAX_CMC */
 };
 #endif
-
-#if defined(CONFIG_WIMAX_CMC)
-static struct i2c_gpio_platform_data wmxeeprom_i2c_gpio_data = {
-	.sda_pin  = GPIO_CMC_SDA_18V,
-	.scl_pin  = GPIO_CMC_SCL_18V,
-	.udelay = 2,
-};
-static struct platform_device wmxeeprom_i2c_gpio_device = {
-	.name	= "i2c-gpio",
-	.id	= 18,
-	.dev	= {
-		.platform_data  = &wmxeeprom_i2c_gpio_data,
-	},
-};
-static struct i2c_board_info wmxeeprom_i2c_devices[] __initdata = {
-{
-	I2C_BOARD_INFO("wmxeeprom", 0x50),
-}
-};
-
-#endif /* CONFIG_WIMAX_CMC */
 
 #ifdef CONFIG_S3C_DEV_I2C5
 /* I2C5 */
@@ -7251,8 +7288,9 @@ static struct platform_device *smdkc210_devices[] __initdata = {
 	&exynos4_device_pd[PD_LCD1],
 	&exynos4_device_pd[PD_CAM],
 	&exynos4_device_pd[PD_TV],
+#ifndef CONFIG_TARGET_LOCALE_NA
 	&exynos4_device_pd[PD_GPS],
-
+#endif /* CONFIG_TARGET_LOCALE_NA */
 #if defined(CONFIG_WIMAX_CMC)
 	&s3c_device_cmc732,
 #endif
@@ -7327,10 +7365,6 @@ static struct platform_device *smdkc210_devices[] __initdata = {
 
 	/* consumer driver should resume after resuming i2c drivers */
 	&u1_regulator_consumer,
-
-#if defined(CONFIG_WIMAX_CMC)
-	&wmxeeprom_i2c_gpio_device,
-#endif
 
 #ifdef CONFIG_EXYNOS4_DEV_MSHC
 	&s3c_device_mshci,
@@ -7570,17 +7604,6 @@ static void __init exynos4_cma_region_reserve(struct cma_region *regions_normal,
 			continue;
 
 		if (reg->start) {
-#if defined(CONFIG_USE_MFC_CMA) && defined(CONFIG_MACH_Q1_BD)
-			if (reg->start == 0x67200000) {
-				if (!memblock_is_region_reserved
-					(reg->start, 0x600000) &&
-					memblock_reserve(reg->start,
-						reg->size) >= 0)
-					reg->reserved = 1;
-			} else if (reg->start == 0x68400000)
-				reg->reserved = 1;
-			else
-#endif
 			if (!memblock_is_region_reserved(reg->start, reg->size)
 			    && memblock_reserve(reg->start, reg->size) >= 0)
 				reg->reserved = 1;
@@ -7592,10 +7615,6 @@ static void __init exynos4_cma_region_reserve(struct cma_region *regions_normal,
 				reg->reserved = 1;
 			}
 		}
-
-		if (reg->reserved)
-			pr_info("S5P/CMA: Reserved 0x%08x/0x%08x for '%s'\n",
-				reg->start, reg->size, reg->name);
 	}
 
 	if (regions_secure && regions_secure->size) {
@@ -7690,11 +7709,7 @@ static void __init exynos4_reserve_mem(void)
 			{
 				.alignment = 1 << 17,
 			},
-#if defined(CONFIG_USE_MFC_CMA) && defined(CONFIG_MACH_Q1_BD)
-			.start = 0x68400000,
-#else
 			.start = 0,
-#endif
 		},
 #endif
 #ifdef CONFIG_VIDEO_SAMSUNG_MEMSIZE_MFC0
@@ -7704,11 +7719,7 @@ static void __init exynos4_reserve_mem(void)
 			{
 				.alignment = 1 << 17,
 			},
-#if defined(CONFIG_USE_MFC_CMA) && defined(CONFIG_MACH_Q1_BD)
-			.start = 0x67200000,
-#else
 			.start = 0,
-#endif
 		},
 #endif
 #ifdef CONFIG_VIDEO_SAMSUNG_MEMSIZE_MFC
@@ -7746,12 +7757,7 @@ static void __init exynos4_reserve_mem(void)
 		{
 			.name = "tvout",
 			.size = CONFIG_VIDEO_SAMSUNG_MEMSIZE_TVOUT * SZ_1K,
-#ifdef CONFIG_USE_TVOUT_CMA
-			.start = 0x65800000,
-			.reserved = 1,
-#else
 			.start = 0,
-#endif
 		},
 #endif
 		{
@@ -7761,10 +7767,10 @@ static void __init exynos4_reserve_mem(void)
 
 	static const char map[] __initconst =
 		"android_pmem.0=pmem;android_pmem.1=pmem_gpu1;"
-		"s3cfb.0=fimd;exynos4-fb.0=fimd;"
-		"s3c-fimc.0=fimc0;s3c-fimc.1=fimc1;s3c-fimc.2=fimc2;"
+		"s3cfb.0=fimd;exynos4-fb.0=fimd;samsung-pd.1=fimd;"
+		"s3c-fimc.0=fimc0;s3c-fimc.1=fimc1;s3c-fimc.2=fimc2;s3c-fimc.3=fimc3;"
 		"exynos4210-fimc.0=fimc0;exynos4210-fimc.1=fimc1;"
-		"exynos4210-fimc.2=fimc2;exynos4210-fimc3=fimc3;"
+		"exynos4210-fimc.2=fimc2;exynos4210-fimc.3=fimc3;"
 #ifdef CONFIG_ION_EXYNOS
 		"ion-exynos=ion;"
 #endif
@@ -7786,25 +7792,6 @@ static void __init exynos4_reserve_mem(void)
 
 }
 #endif
-
-static void __init exynos_reserve(void)
-{
-#ifdef CONFIG_USE_TVOUT_CMA
-	if (dma_declare_contiguous(&s5p_device_tvout.dev,
-			CONFIG_VIDEO_SAMSUNG_MEMSIZE_TVOUT * SZ_1K,
-			0x65800000, 0))
-		printk(KERN_ERR "%s: failed to reserve contiguous "
-			"memory region for TVOUT\n", __func__);
-#endif
-
-#ifdef CONFIG_USE_MFC_CMA
-	if (dma_declare_contiguous(&s5p_device_mfc.dev,
-			SZ_1M * 40, 0x67800000, 0))
-		printk(KERN_ERR "%s: failed to reserve contiguous "
-			"memory region for MFC0/1\n", __func__);
-#endif
-}
-
 
 static void __init exynos_sysmmu_init(void)
 {
@@ -8040,11 +8027,6 @@ static void __init smdkc210_machine_init(void)
 #endif
 #endif
 
-#if defined(CONFIG_WIMAX_CMC)
-	i2c_register_board_info(18, wmxeeprom_i2c_devices,
-			ARRAY_SIZE(wmxeeprom_i2c_devices));
-#endif
-
 
 	/* 400 kHz for initialization of MMC Card  */
 	__raw_writel((__raw_readl(EXYNOS4_CLKDIV_FSYS3) & 0xfffffff0)
@@ -8258,5 +8240,4 @@ MACHINE_START(SMDKC210, MODEL_NAME)
 	.init_machine	= smdkc210_machine_init,
 	.timer		= &exynos4_timer,
 	.init_early	= &exynos_init_reserve,
-	.reserve	= &exynos_reserve,
 MACHINE_END

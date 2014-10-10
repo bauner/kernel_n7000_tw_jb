@@ -30,17 +30,27 @@
 #include <plat/gpio-cfg.h>
 #include <linux/stmpe811-adc.h>
 
+#include <linux/usb/android_composite.h>
+#include <plat/devs.h>
+
+#include <mach/usb_switch.h>
+
+
+
 #define SEC_FUELGAUGE_I2C_ID 4
 #define SEC_MAX77693MFD_I2C_ID 5
 #define P30_USB 7
 
 #define SEC_BATTERY_PMIC_NAME ""
 
-#define TA_ADC_LOW              700
+#define TA_ADC_LOW              150
 
 static struct power_supply *charger_supply;
 static bool is_jig_on;
 
+
+/* cable state */
+bool is_cable_attached;
 
 static void sec_bat_initial_check(void)
 {
@@ -73,10 +83,20 @@ static bool sec_chg_gpio_init(void)
 	return true;
 }
 
+/* Get LP charging mode state */
+unsigned int lpcharge;
+static int battery_get_lpm_state(char *str)
+{
+	get_option(&str, &lpcharge);
+	pr_info("%s: Low power charging mode: %d\n", __func__, lpcharge);
+
+	return lpcharge;
+}
+__setup("lpcharge=", battery_get_lpm_state);
+
 static bool sec_bat_is_lpm(void)
 {
-	/* return sec_bootmode == 5 ? true : false; */
-	return false;
+	return lpcharge == 1 ? true : false;
 }
 
 void check_jig_status(int status)
@@ -90,15 +110,17 @@ void check_jig_status(int status)
 
 static bool sec_bat_check_jig_status(void)
 {
-	return is_jig_on;
+	return !gpio_get_value(GPIO_IF_CON_SENSE) ? 1 : 0;
 }
 
-static int current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
+int current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
 
 static int sec_bat_check_cable_callback(void)
 {
+	struct usb_gadget *gadget =
+			platform_get_drvdata(&s3c_device_usbgadget);
 	bool attach = true;
-	int adc;
+	int adc_1, adc_2, avg_adc;
 
 	if (!charger_supply) {
 		charger_supply = power_supply_get_by_name("sec-charger");
@@ -107,12 +129,44 @@ static int sec_bat_check_cable_callback(void)
 			pr_err("%s: failed to get power supplies\n", __func__);
 	}
 
+	/* ADC check margin (300~500ms) */
+	msleep(350);
+
+	usb_switch_lock();
+	usb_switch_set_path(USB_PATH_ADCCHECK);
+
+	adc_1 = stmpe811_get_adc_data(6);
+	adc_2 = stmpe811_get_adc_data(6);
+
+	avg_adc = (adc_1 + adc_2)/2;
+
+	usb_switch_clr_path(USB_PATH_ADCCHECK);
+	usb_switch_unlock();
+
+	pr_info("[BAT] %s: Adc value (%d)\n", __func__,  avg_adc);
+
 	attach = !gpio_get_value(GPIO_TA_nCONNECTED) ? true : false;
 
-	/* temp : set cable type always TA */
-	current_cable_type =  attach ? POWER_SUPPLY_TYPE_MAINS :
-				/* POWER_SUPPLY_TYPE_USB : */
-				POWER_SUPPLY_TYPE_BATTERY;
+	if(attach) {
+		if(avg_adc > TA_ADC_LOW)
+			current_cable_type = POWER_SUPPLY_TYPE_MAINS;
+		else
+			current_cable_type = POWER_SUPPLY_TYPE_USB;
+
+		is_cable_attached = true;
+	}
+	else {
+		current_cable_type = POWER_SUPPLY_TYPE_BATTERY;
+		is_cable_attached = false;
+	}
+
+	/* temp code : only set vbus enable when usb attaced */
+	if (gadget) {
+		if (attach)
+			usb_gadget_vbus_connect(gadget);
+		else
+			usb_gadget_vbus_disconnect(gadget);
+	}
 
 #if 0
 	pr_info("%s: Cable type(%s), Attach(%d), Adc(%d)\n",
@@ -121,6 +175,7 @@ static int sec_bat_check_cable_callback(void)
 		"Battery" : current_cable_type == POWER_SUPPLY_TYPE_USB ?
 		"USB" : "TA", attach, adc);
 #endif
+
 	return current_cable_type;
 }
 
@@ -192,17 +247,17 @@ static sec_bat_adc_region_t cable_adc_value_table[] = {
 };
 
 static sec_charging_current_t charging_current_table[] = {
+	{0,     0,      0,      0},     /* POWER_SUPPLY_TYPE_UNKNOWN */
 	{0,     0,      0,      0},     /* POWER_SUPPLY_TYPE_BATTERY */
-	{0,     0,      0,      0},     /* POWER_SUPPLY_TYPE_UPS */
-	{1000,  900,    200,    0},     /* POWER_SUPPLY_TYPE_MAINS */
-	{1000,  900,    200,    0},     /* POWER_SUPPLY_TYPE_USB */
-	{1000,  900,    200,    0},     /* POWER_SUPPLY_TYPE_USB_DCP */
-	{1000,  900,    200,    0},     /* POWER_SUPPLY_TYPE_USB_CDP */
-	{1000,  900,    200,    0},     /* POWER_SUPPLY_TYPE_USB_ACA */
+	{1000,  900,    250,    0},     /* POWER_SUPPLY_TYPE_UPS */
+	{1800,  1800,    275,    0},     /* POWER_SUPPLY_TYPE_MAINS*/
+	{500,   500,    250,    0},     /* POWER_SUPPLY_TYPE_USB*/
+	{1000,  900,    250,    0},     /* POWER_SUPPLY_TYPE_USB_DCP */
+	{1000,  900,    250,    0},     /* POWER_SUPPLY_TYPE_USB_CDP */
+	{1000,  900,    250,    0},     /* POWER_SUPPLY_TYPE_USB_ACA */
 	{0,     0,      0,      0},     /* POWER_SUPPLY_TYPE_OTG */
 	{0,     0,      0,      0},     /* POWER_SUPPLY_TYPE_DOCK */
-	{500,   500,    200,    0},     /* POWER_SUPPLY_TYPE_MISC */
-	{0,     0,      0,      0},     /* POWER_SUPPLY_TYPE_WIRELESS */
+	{500,   500,    0,      0},     /* POWER_SUPPLY_TYPE_MISC */
 };
 
 /* unit: seconds */
@@ -352,22 +407,17 @@ static sec_battery_platform_data_t sec_battery_pdata = {
 	.temp_low_recovery_lpm = 0,
 
 	.full_check_type = SEC_BATTERY_FULLCHARGED_CHGINT,
-	.full_check_count = 3,
-	.full_check_adc_1st = 26500,    /* CHECK ME */
-	.full_check_adc_2nd = 25800,    /* CHECK ME */
+	.full_check_type_2nd = SEC_BATTERY_FULLCHARGED_TIME,
+	.full_check_count = 80,
 	.chg_polarity_full_check = 1,
-	.full_condition_type =
-		SEC_BATTERY_FULL_CONDITION_SOC |
-		SEC_BATTERY_FULL_CONDITION_OCV,
-	.full_condition_soc = 99,
-	.full_condition_ocv = 4170,
+	.full_condition_type = 0,
+	.full_condition_soc = 100,
+	.full_condition_ocv = 4300,
 
-	.recharge_condition_type =
-		SEC_BATTERY_RECHARGE_CONDITION_SOC |
-		SEC_BATTERY_RECHARGE_CONDITION_VCELL,
-	.recharge_condition_soc = 98,
-	.recharge_condition_avgvcell = 4150,
-	.recharge_condition_vcell = 4150,
+	.recharge_condition_type = SEC_BATTERY_RECHARGE_CONDITION_VCELL,
+	.recharge_condition_soc = 99,
+	.recharge_condition_avgvcell = 4257,
+	.recharge_condition_vcell = 4257,
 
 	.charging_total_time = 10 * 60 * 60,
 	.recharging_total_time = 90 * 60,
@@ -388,6 +438,10 @@ static sec_battery_platform_data_t sec_battery_pdata = {
 	.chg_polarity_status = 0,
 	.chg_irq_attr = IRQF_TRIGGER_RISING,
 	.chg_float_voltage = 4300,
+
+	.chg_curr_siop_lv1 = 1500,
+	.chg_curr_siop_lv2 = 1000,
+	.chg_curr_siop_lv3 = 500,
 };
 
 /* set NCP1851 Charger gpio i2c */
@@ -452,15 +506,59 @@ static struct platform_device *sec_battery_devices[] __initdata = {
 
 static void charger_gpio_init(void)
 {
-	s3c_gpio_cfgpin(GPIO_TA_nCONNECTED, S3C_GPIO_INPUT);
-	s3c_gpio_setpull(GPIO_TA_nCONNECTED, S3C_GPIO_PULL_NONE);
+	int ret;
 
-	s3c_gpio_cfgpin(GPIO_CHG_INT, S3C_GPIO_INPUT);
-	s3c_gpio_setpull(GPIO_CHG_INT, S3C_GPIO_PULL_NONE);
+	ret = gpio_request(GPIO_TA_nCONNECTED, "GPIO_TA_nCONNECTED");
+	if (ret) {
+		printk(KERN_ERR "%s: gpio_request fail[%d], ret = %d\n",
+		__func__, GPIO_TA_nCONNECTED, ret);
+		return;
+	}
+
+#if defined(CONFIG_MACH_KONA_EUR_LTE) || defined(CONFIG_MACH_KONALTE_USA_ATT)
+	if (system_rev >= 3)
+		ret = gpio_request(GPIO_CHG_NEW_INT, "GPIO_CHG_INT");
+	else
+		ret = gpio_request(GPIO_CHG_INT, "GPIO_CHG_INT");
+#else
+	ret = gpio_request(GPIO_CHG_INT, "GPIO_CHG_INT");
+#endif
+	if (ret) {
+		printk(KERN_ERR "%s: gpio_request fail[%d], ret = %d\n",
+		__func__, GPIO_CHG_INT, ret);
+		return;
+	}
+
+	 s3c_gpio_setpull(GPIO_TA_nCONNECTED, S3C_GPIO_PULL_UP);
+	 s5p_register_gpio_interrupt(GPIO_TA_nCONNECTED);
+	 s3c_gpio_cfgpin(GPIO_TA_nCONNECTED, S3C_GPIO_SFN(0xF)); /* EINT */
+
+#if defined(CONFIG_MACH_KONA_EUR_LTE) || defined(CONFIG_MACH_KONALTE_USA_ATT)
+	if (system_rev >= 3) {
+		s3c_gpio_setpull(GPIO_CHG_NEW_INT, S3C_GPIO_PULL_NONE);
+		s5p_register_gpio_interrupt(GPIO_CHG_NEW_INT);
+		s3c_gpio_cfgpin(GPIO_CHG_NEW_INT, S3C_GPIO_SFN(0xF)); /* EINT */
+	} else {
+		s3c_gpio_setpull(GPIO_CHG_INT, S3C_GPIO_PULL_NONE);
+		s5p_register_gpio_interrupt(GPIO_CHG_INT);
+		s3c_gpio_cfgpin(GPIO_CHG_INT, S3C_GPIO_SFN(0xF)); /* EINT */
+	}
+#else
+	 s3c_gpio_setpull(GPIO_CHG_INT, S3C_GPIO_PULL_NONE);
+	 s5p_register_gpio_interrupt(GPIO_CHG_INT);
+	 s3c_gpio_cfgpin(GPIO_CHG_INT, S3C_GPIO_SFN(0xF)); /* EINT */
+ #endif
 
 	sec_battery_pdata.bat_irq = gpio_to_irq(GPIO_TA_nCONNECTED);
-#if 0
-	sec_battery_pdata.chg_irq = gpio_to_irq(GPIO_CHG_INT);
+
+#if defined(CONFIG_MACH_KONA_EUR_LTE) || defined(CONFIG_MACH_KONALTE_USA_ATT)
+	if (system_rev >= 3)
+		sec_battery_pdata.chg_irq = gpio_to_irq(GPIO_CHG_NEW_INT);
+	else if (system_rev > 0)
+		sec_battery_pdata.chg_irq = gpio_to_irq(GPIO_CHG_INT);
+#else
+	if (system_rev > 0)
+		sec_battery_pdata.chg_irq = gpio_to_irq(GPIO_CHG_INT);
 #endif
 }
 

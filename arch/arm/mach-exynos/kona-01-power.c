@@ -17,6 +17,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ *=======================================
+ * Kona power history
+ *=======================================
+ * 2013. 2. 02 : jaecheol kim (jc22.kim@samsung.com)
+ *  - kona add if_pmic(max77693) from revision 0.8(gpio=06)
+        so divide power files based on kona-power.c
  */
 
 #include <linux/i2c.h>
@@ -26,6 +33,70 @@
 #include <mach/irqs.h>
 
 #include <linux/mfd/max77686.h>
+#include <linux/mfd/max77693.h>
+
+
+#ifdef CONFIG_MFD_MAX77693
+static struct regulator_consumer_supply safeout1_supply[] = {
+	REGULATOR_SUPPLY("safeout1", NULL),
+};
+
+static struct regulator_consumer_supply safeout2_supply[] = {
+	REGULATOR_SUPPLY("safeout2", NULL),
+};
+
+static struct regulator_consumer_supply charger_supply[] = {
+	REGULATOR_SUPPLY("vinchg1", "charger-manager.0"),
+	REGULATOR_SUPPLY("vinchg1", NULL),
+};
+
+static struct regulator_init_data safeout1_init_data = {
+	.constraints	= {
+		.name		= "safeout1 range",
+		.valid_ops_mask = REGULATOR_CHANGE_STATUS,
+		.always_on	= 0,
+		.boot_on	= 1,
+		.state_mem	= {
+			.enabled = 1,
+		},
+	},
+	.num_consumer_supplies	= ARRAY_SIZE(safeout1_supply),
+	.consumer_supplies	= safeout1_supply,
+};
+
+static struct regulator_init_data safeout2_init_data = {
+	.constraints	= {
+		.name		= "safeout2 range",
+		.valid_ops_mask = REGULATOR_CHANGE_STATUS,
+		.always_on	= 0,
+		.boot_on	= 0,
+		.state_mem	= {
+			.enabled = 1,
+		},
+	},
+	.num_consumer_supplies	= ARRAY_SIZE(safeout2_supply),
+	.consumer_supplies	= safeout2_supply,
+};
+
+static struct regulator_init_data charger_init_data = {
+	.constraints	= {
+		.name		= "CHARGER",
+		.valid_ops_mask = REGULATOR_CHANGE_STATUS |
+		REGULATOR_CHANGE_CURRENT,
+		.boot_on	= 1,
+		.min_uA		= 60000,
+		.max_uA		= 2580000,
+	},
+	.num_consumer_supplies	= ARRAY_SIZE(charger_supply),
+	.consumer_supplies	= charger_supply,
+};
+
+struct max77693_regulator_data max77693_regulators[] = {
+	{MAX77693_ESAFEOUT1, &safeout1_init_data,},
+	{MAX77693_ESAFEOUT2, &safeout2_init_data,},
+	{MAX77693_CHARGER, &charger_init_data,},
+};
+#endif
 
 #if defined(CONFIG_REGULATOR_MAX77686)
 /* max77686 */
@@ -89,7 +160,7 @@ static struct regulator_consumer_supply ldo21_supply[] = {
 };
 
 static struct regulator_consumer_supply ldo23_supply[] = {
-	REGULATOR_SUPPLY("vdd_adc_3.3v", NULL),
+	REGULATOR_SUPPLY("vmotor", NULL),
 };
 
 static struct regulator_consumer_supply ldo24_supply[] = {
@@ -176,7 +247,7 @@ REGULATOR_INIT(ldo19, "VT_CORE_1.8V", 1800000, 1800000, 0,
 	       REGULATOR_CHANGE_STATUS, 1);
 REGULATOR_INIT(ldo21, "VTF_2.8V", 2800000, 2800000, 0,
 	       REGULATOR_CHANGE_STATUS, 1);
-REGULATOR_INIT(ldo23, "VDD_ADC_3.3V", 3300000, 3300000, 1,
+REGULATOR_INIT(ldo23, "VCC_MOTOR_3.0V", 3000000, 3000000, 0,
 	       REGULATOR_CHANGE_STATUS, 1);
 REGULATOR_INIT(ldo24, "CAM_A2.8V", 2800000, 2800000, 0,
 	       REGULATOR_CHANGE_STATUS, 1);
@@ -356,32 +427,8 @@ struct max77686_platform_data exynos4_max77686_info = {
 
 void midas_power_init(void)
 {
+	/* do nothing */
 	printk(KERN_INFO "%s\n", __func__);
-
-#if defined(CONFIG_MACH_KONA_EUR_OPEN) ||\
-	defined(CONFIG_MACH_KONA_EUR_WIFI) || defined(CONFIG_MACH_KONA_KOR_WIFI)
-	if (system_rev >= 3) {
-		printk(KERN_INFO "%s pmic buck 3, buck4 pin changes\n",
-			__func__);
-		exynos4_max77686_info.buck234_gpio_selb[1] =
-			GPIO_BUCK3_NEW_SEL;
-		exynos4_max77686_info.buck234_gpio_selb[2] =
-			GPIO_BUCK4_NEW_SEL;
-	}
-#endif
-#if defined(CONFIG_MACH_KONA_EUR_LTE) || defined(CONFIG_MACH_KONALTE_USA_ATT)
-	/*
-		KONA LTE 'BUCK2_SEL' pin moved from rev0.1
-		- system_rev >=2 : GPF3[0]
-		- system_rev < 2 : GPX2[4]
-	*/
-	if (system_rev >= 2) {
-		printk(KERN_INFO "%s pmic buck2 pin changes\n",
-			__func__);
-		exynos4_max77686_info.buck234_gpio_selb[0] =
-			GPIO_BUCK2_NEW_SEL;
-	}
-#endif
 }
 #endif /* CONFIG_REGULATOR_MAX77686 */
 
