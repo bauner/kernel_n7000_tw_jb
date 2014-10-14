@@ -196,24 +196,21 @@ static struct gpio_init_data u1_init_gpios[] = {
 		S3C_GPIO_PULL_NONE, S5P_GPIO_DRVSTR_LV1}, /* GPIO_BOOT_MODE */
 	{EXYNOS4_GPX2(3), S3C_GPIO_INPUT, S3C_GPIO_SETPIN_NONE,
 		S3C_GPIO_PULL_NONE, S5P_GPIO_DRVSTR_LV1}, /* GPIO_FUEL_ALERT */
-#if defined(CONFIG_TARGET_LOCALE_NAATT_TEMP)
-	{EXYNOS4_GPX2(4), S3C_GPIO_INPUT,  S3C_GPIO_SETPIN_NONE,
-		S3C_GPIO_PULL_DOWN, S5P_GPIO_DRVSTR_LV1}, /* NC */
-#endif
 	{EXYNOS4_GPX3(1), S3C_GPIO_OUTPUT, S3C_GPIO_SETPIN_ZERO,
 		S3C_GPIO_PULL_NONE, S5P_GPIO_DRVSTR_LV1}, /* GPIO_BT_WAKE */
 	{EXYNOS4_GPX3(2), S3C_GPIO_SFN(GPIO_DET_35_AF), S3C_GPIO_SETPIN_NONE,
 		S3C_GPIO_PULL_NONE, S5P_GPIO_DRVSTR_LV1}, /* GPIO_DET_35 */
+	{EXYNOS4_GPX3(3), S3C_GPIO_OUTPUT, S3C_GPIO_SETPIN_ZERO,
+		S3C_GPIO_PULL_NONE, S5P_GPIO_DRVSTR_LV1},
 #if defined(CONFIG_TARGET_LOCALE_NA)
 	/* NC */
 	{EXYNOS4_GPX3(3), S3C_GPIO_INPUT, S3C_GPIO_SETPIN_ZERO,
 		S3C_GPIO_PULL_DOWN, S5P_GPIO_DRVSTR_LV1},
 #else
-	{EXYNOS4_GPX3(3), S3C_GPIO_OUTPUT, S3C_GPIO_SETPIN_ZERO,
-		S3C_GPIO_PULL_NONE, S5P_GPIO_DRVSTR_LV1},
-#endif /*CONFIG_TARGET_LOCALE_NA*/
 	{EXYNOS4_GPX3(4), S3C_GPIO_INPUT, S3C_GPIO_SETPIN_NONE,
 		S3C_GPIO_PULL_NONE, S5P_GPIO_DRVSTR_LV1},
+#endif /*CONFIG_TARGET_LOCALE_NA*/
+
 #if defined(CONFIG_TARGET_LOCALE_NA) || defined(CONFIG_TARGET_LOCALE_NAATT_TEMP)
 	/* NC*/
 	{EXYNOS4_GPX3(5), S3C_GPIO_INPUT, S3C_GPIO_SETPIN_ZERO,
@@ -471,8 +468,7 @@ static unsigned int u1_sleep_gpio_table[][3] = {
 	{EXYNOS4_GPB(3), S3C_GPIO_SLP_OUT0, S3C_GPIO_PULL_NONE},
 	{EXYNOS4_GPB(4), S3C_GPIO_SLP_OUT0, S3C_GPIO_PULL_NONE},
 	{EXYNOS4_GPB(5), S3C_GPIO_SLP_OUT0, S3C_GPIO_PULL_NONE},
-#elif defined(CONFIG_TARGET_LOCALE_NTT) \
-	|| defined(CONFIG_TARGET_LOCALE_NAATT_TEMP)
+#elif defined(CONFIG_TARGET_LOCALE_NTT)
 	{EXYNOS4_GPB(0), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_DOWN},
 	{EXYNOS4_GPB(1), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_DOWN},
 	{EXYNOS4_GPB(2), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_DOWN},
@@ -480,7 +476,12 @@ static unsigned int u1_sleep_gpio_table[][3] = {
 	{EXYNOS4_GPB(4), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_DOWN},
 	{EXYNOS4_GPB(5), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_DOWN},
 #else
+#if defined(CONFIG_TARGET_LOCALE_NAATT_TEMP)
+	{EXYNOS4_GPB(0), S3C_GPIO_SLP_INPUT,  S3C_GPIO_PULL_NONE},
+#else
 	{EXYNOS4_GPB(0), S3C_GPIO_SLP_PREV,  S3C_GPIO_PULL_NONE},
+#endif
+
 #if defined(CONFIG_LEDS_GPIO)
 	{EXYNOS4_GPB(1), S3C_GPIO_SLP_OUT0, S3C_GPIO_PULL_NONE},
 #else /*CONFIG_LEDS_GPIO*/
@@ -575,12 +576,13 @@ static unsigned int u1_sleep_gpio_table[][3] = {
 #endif
 #endif
 #endif /*end CONFIG_VIDEO_TSI*/
-#endif /* CONFIG_TARGET_LOCALE_NA */
 	{EXYNOS4210_GPE1(0), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_NONE},
 	{EXYNOS4210_GPE1(1), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_NONE},
 	{EXYNOS4210_GPE1(2), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_NONE},
 	{EXYNOS4210_GPE1(3), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_NONE},
 	{EXYNOS4210_GPE1(4), S3C_GPIO_SLP_PREV,  S3C_GPIO_PULL_NONE},
+#endif /* CONFIG_TARGET_LOCALE_NA */
+
 #if !defined(CONFIG_VIDEO_TSI)
 #if defined(CONFIG_MACH_U1_KOR_LGT)
 	{EXYNOS4210_GPE1(5), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_NONE},
@@ -593,10 +595,7 @@ static unsigned int u1_sleep_gpio_table[][3] = {
 #endif
 #endif /* end CONFIG_VIDEO_TSI */
 
-
-#if defined(CONFIG_TARGET_LOCALE_NA)
-	{ EXYNOS4210_GPE2(0),  S3C_GPIO_SLP_PREV,	S3C_GPIO_PULL_NONE},
-#elif defined(CONFIG_MACH_U1_KOR_LGT)
+#if defined(CONFIG_MACH_U1_KOR_LGT)
 	{EXYNOS4210_GPE2(0), S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_NONE},
 #else
 	{EXYNOS4210_GPE2(0), S3C_GPIO_SLP_PREV,  S3C_GPIO_PULL_DOWN},
@@ -1094,6 +1093,14 @@ static unsigned int u1_sleep_gpio_table[][3] = {
 #endif
 };
 
+#if defined(CONFIG_TARGET_LOCALE_NAATT_TEMP)
+static unsigned int u1_exint_sleep_gpio_table[][3] = {
+	{ EXYNOS4_GPX2(4),  S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_DOWN},
+	{ EXYNOS4_GPX3(0),  S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_DOWN},
+	{ EXYNOS4_GPX3(5),  S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_DOWN},
+};
+#endif
+
 void u1_config_gpio_table(void)
 {
 	u32 i, gpio;
@@ -1120,34 +1127,28 @@ static void config_sleep_gpio_table(int array_size,
 		s3c_gpio_slp_cfgpin(gpio, gpio_table[i][1]);
 		s3c_gpio_slp_setpull_updown(gpio, gpio_table[i][2]);
 	}
-#if defined(CONFIG_TARGET_LOCALE_NA)
-	gpio_direction_input(EXYNOS4_GPX1(5));
-	s3c_gpio_setpull(EXYNOS4_GPX1(5), S3C_GPIO_PULL_DOWN);
-	gpio_direction_output(EXYNOS4_GPX1(7), 0);
-	s3c_gpio_setpull(EXYNOS4_GPX1(7), S3C_GPIO_PULL_NONE);
-	gpio_direction_input(EXYNOS4_GPX2(4));
-	s3c_gpio_setpull(EXYNOS4_GPX2(4), S3C_GPIO_PULL_DOWN);
-	gpio_direction_input(EXYNOS4_GPX3(3));
-	s3c_gpio_setpull(EXYNOS4_GPX3(3), S3C_GPIO_PULL_DOWN);
-	gpio_direction_input(EXYNOS4_GPX3(5));
-	s3c_gpio_setpull(EXYNOS4_GPX3(5), S3C_GPIO_PULL_DOWN);
-	if (!gpio_get_value(GPIO_WIMAX_EN)) {
-		for (i = 0; i <= 6; i++) {
-			if (i != 2) {
-				s3c_gpio_slp_cfgpin(EXYNOS4_GPK3(i),
-				S3C_GPIO_SLP_INPUT);
-				s3c_gpio_slp_setpull_updown(EXYNOS4_GPK3(i),
-				S3C_GPIO_PULL_DOWN);
-			}
-		}
-	}
-#endif /* CONFIG_TARGET_LOCALE_NA */
-
-
 }
+
+#if defined(CONFIG_TARGET_LOCALE_NAATT_TEMP)
+static void config_exint_sleep_gpio_table(int array_size,
+				unsigned int (*gpio_table)[3])
+{
+	u32 i, gpio;
+
+	for (i = 0; i < ARRAY_SIZE(u1_exint_sleep_gpio_table); i++) {
+		gpio = u1_exint_sleep_gpio_table[i][0];
+		s3c_gpio_cfgpin(gpio, u1_exint_sleep_gpio_table[i][1]);
+		s3c_gpio_setpull(gpio, u1_exint_sleep_gpio_table[i][2]);
+	}
+}
+#endif
 
 void u1_config_sleep_gpio_table(void)
 {
 	config_sleep_gpio_table(ARRAY_SIZE(u1_sleep_gpio_table),
 			u1_sleep_gpio_table);
+#if defined(CONFIG_TARGET_LOCALE_NAATT_TEMP)
+	config_exint_sleep_gpio_table(ARRAY_SIZE(u1_exint_sleep_gpio_table),
+			u1_exint_sleep_gpio_table);
+#endif
 }
