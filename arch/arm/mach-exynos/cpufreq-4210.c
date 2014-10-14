@@ -191,13 +191,6 @@ static const unsigned int asv_voltage_B[CPUFREQ_LEVEL_END][5] = {
 	{ 1000000,  950000,  950000,  950000,  950000 }, // 100MHz
 };
 
- 
-unsigned int get_exynos4210_overclock( void) {
-    return exynos4210_freq_table[max_support_idx].frequency;
-}
-EXPORT_SYMBOL( get_exynos4210_overclock);
-
-
 static void set_clkdiv(unsigned int div_index)
 {
 	unsigned int tmp;
