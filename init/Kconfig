@@ -908,6 +908,7 @@ config CC_OPTIMIZE_NORMAL
 	bool "Optimize Normal (-O2)"
 	help
 	  Enabling this option will pass "-O2" to gcc
+
 config CC_OPTIMIZE_FOR_SIZE
 	bool "Optimize for size (-Os)"
 	help
